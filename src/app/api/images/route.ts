@@ -107,7 +107,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Ukuran gambar referensi terlalu besar" }, { status: 400 });
     }
 
-    const finalPrompt = prompt.trim();
+    const finalPrompt = normalizedReferenceImages.length
+      ? [
+          prompt.trim(),
+          "Use the attached reference image as the main visual reference.",
+          "Preserve the subject identity, key visual traits, composition cues, and important details from the reference image while following the user's request.",
+          "Do not ignore the reference image.",
+        ].join(" ")
+      : prompt.trim();
 
     const queue = getImageQueue();
     const counts = await queue.getJobCounts("waiting", "delayed", "active", "paused");

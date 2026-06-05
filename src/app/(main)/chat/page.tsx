@@ -106,7 +106,7 @@ export default function ChatPage() {
     await supabase.from("messages").insert({
       conversation_id: convId,
       role: "user",
-      content: "",
+      content: options.prompt.trim(),
       reference_images: options.referenceImages?.length ? options.referenceImages : null,
     });
 
@@ -115,7 +115,7 @@ export default function ChatPage() {
       {
         id: `user-img-${Date.now()}`,
         role: "user",
-        content: "",
+        content: options.prompt.trim(),
         referenceImages: options.referenceImages,
         createdAt: new Date().toISOString(),
       },
