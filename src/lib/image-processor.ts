@@ -4,10 +4,12 @@ import { uploadToR2 } from "@/lib/r2";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { ImageJobData, ImageJobResult } from "@/lib/image-jobs";
 
+const IMAGE_MODEL = "cx/gpt-5.5-image";
+
 export async function processImageJob(data: ImageJobData): Promise<ImageJobResult> {
   const response = await generateImage({
     prompt: data.finalPrompt,
-    model: "cx/gpt-5.5-image",
+    model: IMAGE_MODEL,
     size: "auto",
     quality: "medium",
     background: "auto",
@@ -55,7 +57,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
       conversation_id: data.conversationId,
       role: "assistant",
       content: `Gambar: ${data.originalPrompt}`,
-      model: "cx/gpt-5.5-image",
+      model: IMAGE_MODEL,
       image_url: imageUrl,
     })
     .select("id, created_at")
@@ -79,7 +81,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
       color_theme: data.colorTheme,
       language: data.language,
       watermark: data.watermark || null,
-      model: "cx/gpt-5.5-image",
+      model: IMAGE_MODEL,
       expires_at: expiresAt.toISOString(),
     })
     .select("id")
