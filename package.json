@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "worker:images": "tsx src/workers/image-worker.ts",
+    "cleanup:expired-images": "node scripts/cleanup-expired-images.mjs",
     "lint": "eslint"
   },
   "dependencies": {

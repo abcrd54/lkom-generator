@@ -73,7 +73,8 @@ export default function ChatIdPage() {
     await supabase.from("messages").insert({
       conversation_id: convId,
       role: "user",
-      content: `[Generate Gambar] ${options.prompt}`,
+      content: "",
+      reference_images: options.referenceImages?.length ? options.referenceImages : null,
     });
 
     setMessages((prev) => [
@@ -81,7 +82,7 @@ export default function ChatIdPage() {
       {
         id: `user-img-${Date.now()}`,
         role: "user",
-        content: `[Generate Gambar] ${options.prompt}`,
+        content: "",
         referenceImages: options.referenceImages,
         createdAt: new Date().toISOString(),
       },

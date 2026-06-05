@@ -289,6 +289,9 @@ export function Sidebar({ currentConversationId, onSelectConversation, onNewChat
 
       {/* User Profile */}
       <div className="p-3">
+        <div className="mb-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
+          Menggunakan Teknologi CHATGPT PLUS
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger className="flex w-full items-center gap-2 rounded-md px-2 py-2 hover:bg-blue-50 transition-colors">
             <div className={`flex h-8 w-8 items-center justify-center rounded-full ${isAdmin ? "bg-blue-600" : "bg-blue-200"}`}>

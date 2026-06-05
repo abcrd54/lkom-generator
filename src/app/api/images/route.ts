@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { buildImagePrompt } from "@/lib/prompts";
 import { checkImageRateLimit } from "@/lib/rate-limit";
 import { getImageQueue } from "@/lib/image-jobs";
 import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage } from "@/types";
@@ -108,17 +107,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Ukuran gambar referensi terlalu besar" }, { status: 400 });
     }
 
-    // Build final prompt
-    const finalPrompt = buildImagePrompt({
-      userPrompt: prompt,
-      style,
-      ageGroup,
-      detailLevel,
-      colorTheme,
-      language,
-      watermark,
-      hasReferenceImage: normalizedReferenceImages.length > 0,
-    });
+    const finalPrompt = prompt.trim();
 
     const queue = getImageQueue();
     const counts = await queue.getJobCounts("waiting", "delayed", "active", "paused");

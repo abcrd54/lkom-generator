@@ -10,8 +10,19 @@ type MessageRow = {
   content: string | null;
   model: string | null;
   image_url?: string | null;
+  reference_images?:
+    | {
+        dataUrl: string;
+        mimeType: string;
+        name: string;
+      }[]
+    | null;
   created_at: string;
-  images?: { r2_url: string | null }[] | null;
+  images?: {
+    r2_url: string | null;
+    expires_at: string;
+    storage_deleted_at?: string | null;
+  }[] | null;
 };
 
 export function useChat() {
@@ -24,21 +35,28 @@ export function useChat() {
   const loadMessages = useCallback(async (conversationId: string) => {
     const { data } = await supabase
       .from("messages")
-      .select("*, images(r2_url)")
+      .select("*, images(r2_url, expires_at, storage_deleted_at)")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true });
 
     if (data) {
       const formatted: ChatMessage[] = (data as MessageRow[]).map((m) => {
-        const imageUrl = Array.isArray(m.images) ? m.images[0]?.r2_url : undefined;
+        const image = Array.isArray(m.images) ? m.images[0] : undefined;
+        const imageUrl = image?.r2_url || undefined;
+        const imageExpired = Boolean(
+          image && (!image.r2_url || image.storage_deleted_at || new Date(image.expires_at).getTime() <= Date.now())
+        );
 
         return {
-        id: m.id,
-        role: m.role as "user" | "assistant",
-        content: m.content || "",
-        model: m.model || undefined,
-        imageUrl: imageUrl || m.image_url || undefined,
-        createdAt: m.created_at,
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content || "",
+          model: m.model || undefined,
+          imageUrl: imageUrl || m.image_url || undefined,
+          imageExpired,
+          imageExpiresAt: image?.expires_at,
+          referenceImages: Array.isArray(m.reference_images) ? m.reference_images : undefined,
+          createdAt: m.created_at,
         };
       });
       setMessages(formatted);

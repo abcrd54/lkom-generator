@@ -1,0 +1,5 @@
+ALTER TABLE public.images
+ALTER COLUMN r2_url DROP NOT NULL;
+
+ALTER TABLE public.images
+ADD COLUMN IF NOT EXISTS storage_deleted_at TIMESTAMPTZ;

@@ -60,7 +60,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
     .insert({
       conversation_id: data.conversationId,
       role: "assistant",
-      content: `Gambar: ${data.originalPrompt}`,
+      content: "",
       model: IMAGE_MODEL,
     })
     .select("id, created_at")
@@ -76,7 +76,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
       message_id: savedMessage.id,
       user_id: data.userId,
       r2_url: imageUrl,
-      prompt: data.finalPrompt,
+      prompt: data.originalPrompt,
       style: data.style,
       age_group: data.ageGroup,
       aspect_ratio: data.aspectRatio,
@@ -98,7 +98,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
     imageUrl,
     imageId: savedImage.id,
     messageId: savedMessage.id,
-    prompt: data.finalPrompt,
+    prompt: data.originalPrompt,
     metadata: {
       style: data.style,
       ageGroup: data.ageGroup,

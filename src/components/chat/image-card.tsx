@@ -1,8 +1,9 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { Button } from "@/components/ui/button";
-import { Download, ExternalLink, Loader2 } from "lucide-react";
-import Image from "next/image";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Download, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 interface ImageCardProps {
@@ -14,6 +15,7 @@ interface ImageCardProps {
 export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [open, setOpen] = useState(false);
   const [renderedAt] = useState(() => Date.now());
 
   const daysLeft = expiresAt
@@ -39,38 +41,61 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white max-w-sm">
-      <div className="relative">
-        {loading && (
-          <div className="flex h-32 items-center justify-center bg-slate-50">
-            <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger
+          render={
+            <button
+              type="button"
+              className="relative block w-full overflow-hidden bg-slate-50 text-left"
+              disabled={error}
+            />
+          }
+        >
+          {loading && (
+            <div className="absolute inset-0 z-10 flex h-full min-h-32 items-center justify-center bg-slate-50/90">
+              <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+            </div>
+          )}
+          {error ? (
+            <div className="flex h-32 items-center justify-center bg-red-50 text-xs text-red-500">
+              Gagal memuat gambar
+            </div>
+          ) : (
+            <img
+              key={url}
+              src={url}
+              alt={alt}
+              className="block w-full max-h-48 object-cover"
+              onLoad={() => setLoading(false)}
+              onError={() => {
+                setLoading(false);
+                setError(true);
+              }}
+            />
+          )}
+        </DialogTrigger>
+        <DialogContent className="max-w-5xl border-none bg-black/95 p-2 text-white shadow-2xl sm:max-w-[min(92vw,1200px)]" showCloseButton={true}>
+          <div className="flex max-h-[88vh] items-center justify-center overflow-hidden rounded-lg">
+            <img
+              key={`${url}-modal`}
+              src={url}
+              alt={alt}
+              className="max-h-[88vh] w-auto max-w-full object-contain"
+            />
           </div>
-        )}
-        {error ? (
-          <div className="flex h-32 items-center justify-center bg-red-50 text-xs text-red-500">
-            Gagal memuat gambar
-          </div>
-        ) : (
-          <Image
-            src={url}
-            alt={alt}
-            width={384}
-            height={192}
-            unoptimized
-            className={`w-full max-h-48 object-cover ${loading ? "hidden" : ""}`}
-            onLoad={() => setLoading(false)}
-            onError={() => {
-              setLoading(false);
-              setError(true);
-            }}
-          />
-        )}
-      </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-slate-100">
         <div className="flex items-center gap-2">
           {daysLeft !== null && (
             <span className={`text-[10px] ${daysLeft <= 2 ? "text-red-500 font-medium" : "text-slate-400"}`}>
               {daysLeft === 0 ? "Hari terakhir" : `${daysLeft} hari lagi`}
+            </span>
+          )}
+          {!error && (
+            <span className="text-[10px] text-slate-400">
+              Klik gambar untuk memperbesar
             </span>
           )}
         </div>
@@ -83,15 +108,6 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
             title="Download"
           >
             <Download className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-slate-400 hover:text-slate-600"
-            onClick={() => window.open(url, "_blank")}
-            title="Buka di tab baru"
-          >
-            <ExternalLink className="h-3 w-3" />
           </Button>
         </div>
       </div>

@@ -25,7 +25,7 @@ export interface GeneratedImage {
   id: string;
   message_id: string | null;
   user_id: string;
-  r2_url: string;
+  r2_url: string | null;
   prompt: string;
   style: ImageStyle;
   age_group: AgeGroup;
@@ -36,6 +36,7 @@ export interface GeneratedImage {
   watermark: string | null;
   model: string;
   expires_at: string;
+  storage_deleted_at?: string | null;
   created_at: string;
 }
 
@@ -73,6 +74,8 @@ export interface ChatMessage {
   content: string;
   model?: string;
   imageUrl?: string;
+  imageExpired?: boolean;
+  imageExpiresAt?: string;
   referenceImages?: {
     dataUrl: string;
     mimeType: string;

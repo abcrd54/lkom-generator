@@ -1,7 +1,6 @@
 "use client";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { User, GraduationCap, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import { ImageCard } from "./image-card";
@@ -93,28 +92,8 @@ export function ChatBubble({
             </div>
           )}
 
-          {isPending && !message.content && (
-            <div className="space-y-3 min-w-[220px]">
-              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-                <span className="inline-flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                {pendingText}
-              </div>
-              <div className="space-y-2">
-                <div className="h-2.5 w-40 rounded-full bg-slate-200/90 animate-pulse" />
-                <div className="h-2.5 w-56 rounded-full bg-slate-200/80 animate-pulse [animation-delay:150ms]" />
-                <div className="h-2.5 w-32 rounded-full bg-slate-200/70 animate-pulse [animation-delay:300ms]" />
-              </div>
-            </div>
-          )}
-
-          {message.imageUrl && (
-            <div className="mt-3">
-              <ImageCard url={message.imageUrl} />
-            </div>
-          )}
-
           {message.referenceImages?.length ? (
-            <div className={`mt-3 flex flex-wrap gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+            <div className={`mb-3 flex flex-wrap gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
               {message.referenceImages.map((referenceImage, index) => (
                 <div
                   key={`${referenceImage.name}-${index}`}
@@ -132,6 +111,32 @@ export function ChatBubble({
               ))}
             </div>
           ) : null}
+
+          {isPending && !message.content && (
+            <div className="space-y-3 min-w-[220px]">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                <span className="inline-flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                {pendingText}
+              </div>
+              <div className="space-y-2">
+                <div className="h-2.5 w-40 rounded-full bg-slate-200/90 animate-pulse" />
+                <div className="h-2.5 w-56 rounded-full bg-slate-200/80 animate-pulse [animation-delay:150ms]" />
+                <div className="h-2.5 w-32 rounded-full bg-slate-200/70 animate-pulse [animation-delay:300ms]" />
+              </div>
+            </div>
+          )}
+
+          {message.imageUrl && (
+            <div className="mt-3">
+              <ImageCard url={message.imageUrl} expiresAt={message.imageExpiresAt} />
+            </div>
+          )}
+
+          {!message.imageUrl && message.imageExpired && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Gambar ini sudah expired dan sudah dihapus dari storage.
+            </div>
+          )}
 
           {/* Streaming indicator */}
           {isStreaming && (
@@ -152,12 +157,6 @@ export function ChatBubble({
             </button>
           )}
         </div>
-
-        {message.model && !isUser && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-200 text-slate-400 ml-1">
-            {message.model}
-          </Badge>
-        )}
       </div>
 
       {/* User Avatar - right side */}

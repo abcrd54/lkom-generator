@@ -114,3 +114,24 @@ Check queue counts from the web app:
 ```bash
 curl https://your-vercel-domain.vercel.app/api/queue
 ```
+
+## Expired Image Cleanup
+
+Generated images keep their chat history, but the binary file can be removed from R2 after expiry. The cleanup script:
+
+- finds `images` rows where `expires_at` has passed
+- deletes the corresponding object from R2
+- keeps the database row
+- sets `r2_url = null` and `storage_deleted_at` so the chat can show that the image has expired
+
+Run manually:
+
+```bash
+npm run cleanup:expired-images
+```
+
+Recommended VPS cron example, once per night at 02:15:
+
+```bash
+15 2 * * * cd /home/admin/lkom-generator-worker/deploy/vps && sudo -n docker compose --env-file .env.worker run --rm image-worker npm run cleanup:expired-images >> /var/log/lkom-cleanup.log 2>&1
+```

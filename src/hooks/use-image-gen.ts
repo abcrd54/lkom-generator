@@ -104,7 +104,7 @@ export function useImageGen() {
         return {
           id: savedMsg.id,
           role: "assistant",
-          content: `Gambar: ${options.prompt}`,
+          content: "",
           model: "cx/gpt-5.5-image",
           imageUrl: savedMsg.image_url || result.imageUrl,
           createdAt: savedMsg.created_at,
