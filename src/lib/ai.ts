@@ -99,7 +99,7 @@ export async function generateImage(params: {
     const payload = referenceImages.length
       ? {
           ...basePayload,
-          input_image: referenceImages.length === 1 ? referenceImages[0] : referenceImages,
+          image: referenceImages.length === 1 ? referenceImages[0] : referenceImages,
         }
       : basePayload;
 
@@ -124,7 +124,7 @@ export async function generateImage(params: {
         },
         body: JSON.stringify({
           ...basePayload,
-          input_image: referenceImages[0],
+          image: referenceImages[0],
         }),
         signal: controller.signal,
       });
@@ -132,7 +132,7 @@ export async function generateImage(params: {
 
     if (!response.ok && referenceImages.length && response.status === 400) {
       const errorText = await response.text();
-      console.warn("[ImageGen] Reference image rejected, retrying without input_image:", errorText);
+      console.warn("[ImageGen] Reference image rejected, retrying without image:", errorText);
       response = await fetch(`${baseURL}/images/generations`, {
         method: "POST",
         headers: {
