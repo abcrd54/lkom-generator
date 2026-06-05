@@ -15,7 +15,11 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
     background: "auto",
     image_detail: "high",
     output_format: "png",
-    referenceImageDataUrl: data.referenceImage?.dataUrl,
+    referenceImageDataUrls: data.referenceImages?.length
+      ? data.referenceImages.map((image) => image.dataUrl)
+      : data.referenceImage?.dataUrl
+        ? [data.referenceImage.dataUrl]
+        : undefined,
   });
 
   const imageData = response?.data?.[0];

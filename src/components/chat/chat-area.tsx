@@ -9,9 +9,15 @@ interface ChatAreaProps {
   messages: ChatMessage[];
   loading: boolean;
   streamingContent: string;
+  pendingText?: string;
 }
 
-export function ChatArea({ messages, loading, streamingContent }: ChatAreaProps) {
+export function ChatArea({
+  messages,
+  loading,
+  streamingContent,
+  pendingText = "AI sedang menyusun jawaban",
+}: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -81,6 +87,7 @@ export function ChatArea({ messages, loading, streamingContent }: ChatAreaProps)
               createdAt: new Date().toISOString(),
             }}
             isPending={true}
+            pendingText={pendingText}
           />
         )}
 

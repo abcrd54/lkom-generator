@@ -20,6 +20,11 @@ export interface ImageJobData {
     mimeType: string;
     name: string;
   };
+  referenceImages?: {
+    dataUrl: string;
+    mimeType: string;
+    name: string;
+  }[];
 }
 
 export interface ImageJobResult {

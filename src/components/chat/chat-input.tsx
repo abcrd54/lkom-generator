@@ -5,9 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import Image from "next/image";
-import { Send, ImageIcon, Loader2, Settings2, X, Brush, BarChart3, FileText, GitBranch, User, Upload, ImagePlus } from "lucide-react";
+import { Send, ImageIcon, Loader2, Settings2, X, Brush, BarChart3, FileText, GitBranch, User, ImagePlus } from "lucide-react";
 import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage } from "@/types";
 import { IMAGE_STYLES, AGE_GROUPS, ASPECT_RATIOS, DETAIL_LEVELS, LANGUAGES, COLOR_THEMES } from "@/lib/prompts";
+import { toast } from "sonner";
+
+const MAX_REFERENCE_IMAGES = 3;
+const MAX_REFERENCE_FILE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_REFERENCE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const STYLE_ICONS: Record<string, React.ReactNode> = {
   cartoon: <Brush className="h-3.5 w-3.5" />,
@@ -73,6 +78,11 @@ interface ChatInputProps {
       mimeType: string;
       name: string;
     };
+    referenceImages?: {
+      dataUrl: string;
+      mimeType: string;
+      name: string;
+    }[];
   }) => void;
   loading: boolean;
   imageQuota: { remaining: number; limit?: number; resetAt: string } | null;
@@ -92,11 +102,11 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
     language: "id" as ImageLanguage,
     watermark: "",
   });
-  const [referenceImage, setReferenceImage] = useState<{
+  const [referenceImages, setReferenceImages] = useState<{
     dataUrl: string;
     mimeType: string;
     name: string;
-  } | null>(null);
+  }[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
 
@@ -116,23 +126,52 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
       onGenerateImage({
         prompt: message.trim(),
         ...imageOptions,
-        referenceImage: referenceImage || undefined,
+        referenceImages: referenceImages.length ? referenceImages : undefined,
       });
-      setReferenceImage(null);
+      setReferenceImages([]);
     }
     setMessage("");
   };
 
   const handleReferenceChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) return;
-    if (file.size > 5 * 1024 * 1024) return;
-
-    const payload = await fileToReferencePayload(file);
-    setReferenceImage(payload);
-
+    const files = Array.from(event.target.files || []);
     event.target.value = "";
+
+    if (!files.length) return;
+
+    const remainingSlots = MAX_REFERENCE_IMAGES - referenceImages.length;
+    if (remainingSlots <= 0) {
+      toast.error("Maksimal 3 gambar referensi");
+      return;
+    }
+
+    const validFiles = files.filter((file) => {
+      if (!ALLOWED_REFERENCE_TYPES.has(file.type)) {
+        toast.error("Format gambar harus JPG, PNG, atau WEBP");
+        return false;
+      }
+
+      if (file.size > MAX_REFERENCE_FILE_SIZE) {
+        toast.error("Ukuran gambar maksimal 5 MB");
+        return false;
+      }
+
+      return true;
+    });
+
+    if (validFiles.length > remainingSlots) {
+      toast.error("Maksimal 3 gambar referensi");
+    }
+
+    const filesToAdd = validFiles.slice(0, remainingSlots);
+    if (!filesToAdd.length) return;
+
+    try {
+      const payloads = await Promise.all(filesToAdd.map(fileToReferencePayload));
+      setReferenceImages((prev) => [...prev, ...payloads].slice(0, MAX_REFERENCE_IMAGES));
+    } catch {
+      toast.error("Gagal memuat gambar referensi");
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -293,69 +332,6 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
               />
             </div>
           </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium text-slate-600">Gambar Referensi</Label>
-              <button
-                type="button"
-                onClick={() => referenceInputRef.current?.click()}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-              >
-                <ImagePlus className="h-3.5 w-3.5" />
-                Tambah
-              </button>
-            </div>
-
-            <input
-              ref={referenceInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleReferenceChange}
-            />
-
-            {referenceImage ? (
-              <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                <div className="relative h-14 w-14 overflow-hidden rounded-md border border-slate-200 bg-white">
-                  <Image
-                    src={referenceImage.dataUrl}
-                    alt={referenceImage.name}
-                    fill
-                    unoptimized
-                    className="object-cover"
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium text-slate-700">{referenceImage.name}</div>
-                  <div className="text-[11px] text-slate-500">
-                    Dipakai sebagai acuan visual untuk bentuk, pose, atau elemen utama.
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setReferenceImage(null)}
-                  className="rounded-md p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => referenceInputRef.current?.click()}
-                className="flex w-full items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-left hover:border-blue-300 hover:bg-blue-50/50"
-              >
-                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-slate-500 shadow-sm">
-                  <Upload className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-medium text-slate-700">Unggah 1 gambar referensi</div>
-                  <div className="text-[11px] text-slate-500">JPG, PNG, WEBP. Maksimal 5 MB.</div>
-                </div>
-              </button>
-            )}
-          </div>
         </div>
       )}
 
@@ -406,6 +382,74 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
             </span>
           )}
         </div>
+
+        <input
+          ref={referenceInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          className="hidden"
+          onChange={handleReferenceChange}
+        />
+
+        {mode === "image" && (
+          <div className="mb-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => referenceInputRef.current?.click()}
+                disabled={referenceImages.length >= MAX_REFERENCE_IMAGES || loading || disabled}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Tambah gambar referensi"
+              >
+                <ImagePlus className="h-4 w-4" />
+                + Image
+              </button>
+              <span className="text-[11px] text-slate-400">
+                JPG, PNG, WEBP. Maks {MAX_REFERENCE_IMAGES} gambar, 5 MB/file.
+              </span>
+            </div>
+
+            {referenceImages.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {referenceImages.map((referenceImage, index) => (
+                  <div
+                    key={`${referenceImage.name}-${index}`}
+                    className="flex max-w-[180px] items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-1.5"
+                  >
+                    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-slate-200 bg-white">
+                      <Image
+                        src={referenceImage.dataUrl}
+                        alt={referenceImage.name}
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[11px] font-medium text-slate-700">
+                        {referenceImage.name}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {index + 1}/{MAX_REFERENCE_IMAGES}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReferenceImages((prev) => prev.filter((_, imageIndex) => imageIndex !== index))
+                      }
+                      className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700"
+                      title="Hapus gambar"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Textarea + Send */}
         <div className="flex gap-2">

@@ -66,6 +66,7 @@ export async function generateImage(params: {
   image_detail?: string;
   output_format?: string;
   referenceImageDataUrl?: string;
+  referenceImageDataUrls?: string[];
 }) {
   const apiKey = process.env.NINEROUTER_API_KEY || "sk_9router";
   const baseURL = `${get9RouterBaseURL()}/v1`;
@@ -88,10 +89,17 @@ export async function generateImage(params: {
       output_format: "png",
     };
 
-    const payload = params.referenceImageDataUrl
+    const referenceImages =
+      params.referenceImageDataUrls?.length
+        ? params.referenceImageDataUrls
+        : params.referenceImageDataUrl
+          ? [params.referenceImageDataUrl]
+          : [];
+
+    const payload = referenceImages.length
       ? {
           ...basePayload,
-          input_image: params.referenceImageDataUrl,
+          input_image: referenceImages.length === 1 ? referenceImages[0] : referenceImages,
         }
       : basePayload;
 
@@ -105,7 +113,24 @@ export async function generateImage(params: {
       signal: controller.signal,
     });
 
-    if (!response.ok && params.referenceImageDataUrl && response.status === 400) {
+    if (!response.ok && referenceImages.length > 1 && response.status === 400) {
+      const errorText = await response.text();
+      console.warn("[ImageGen] Multiple reference images rejected, retrying with first input_image:", errorText);
+      response = await fetch(`${baseURL}/images/generations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          ...basePayload,
+          input_image: referenceImages[0],
+        }),
+        signal: controller.signal,
+      });
+    }
+
+    if (!response.ok && referenceImages.length && response.status === 400) {
       const errorText = await response.text();
       console.warn("[ImageGen] Reference image rejected, retrying without input_image:", errorText);
       response = await fetch(`${baseURL}/images/generations`, {

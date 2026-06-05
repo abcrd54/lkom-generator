@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       watermark,
       conversationId,
       referenceImage,
+      referenceImages,
     } = body as {
       prompt: string;
       style: ImageStyle;
@@ -48,6 +49,11 @@ export async function POST(request: NextRequest) {
         mimeType: string;
         name: string;
       };
+      referenceImages?: {
+        dataUrl: string;
+        mimeType: string;
+        name: string;
+      }[];
     };
 
     if (!prompt) {
@@ -79,7 +85,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (referenceImage?.dataUrl && referenceImage.dataUrl.length > 8_000_000) {
+    const normalizedReferenceImages = Array.isArray(referenceImages)
+      ? referenceImages
+      : referenceImage
+        ? [referenceImage]
+        : [];
+
+    if (normalizedReferenceImages.length > 3) {
+      return NextResponse.json({ error: "Maksimal 3 gambar referensi" }, { status: 400 });
+    }
+
+    const allowedReferenceTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    const hasInvalidReference = normalizedReferenceImages.some(
+      (image) => !allowedReferenceTypes.has(image.mimeType)
+    );
+
+    if (hasInvalidReference) {
+      return NextResponse.json({ error: "Format gambar referensi harus JPG, PNG, atau WEBP" }, { status: 400 });
+    }
+
+    if (normalizedReferenceImages.some((image) => image.dataUrl.length > 8_000_000)) {
       return NextResponse.json({ error: "Ukuran gambar referensi terlalu besar" }, { status: 400 });
     }
 
@@ -92,7 +117,7 @@ export async function POST(request: NextRequest) {
       colorTheme,
       language,
       watermark,
-      hasReferenceImage: Boolean(referenceImage?.dataUrl),
+      hasReferenceImage: normalizedReferenceImages.length > 0,
     });
 
     const queue = getImageQueue();
@@ -119,7 +144,7 @@ export async function POST(request: NextRequest) {
       colorTheme,
       language,
       watermark,
-      referenceImage,
+      referenceImages: normalizedReferenceImages.length ? normalizedReferenceImages : undefined,
     });
 
     return NextResponse.json(

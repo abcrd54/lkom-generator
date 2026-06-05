@@ -134,8 +134,9 @@ export default function ChatIdPage() {
 
         <ChatArea
           messages={messages}
-          loading={loading && messages.length === 0}
+          loading={loading}
           streamingContent={streamingContent}
+          pendingText={imageLoading ? "Gambar sedang dibuat" : "AI sedang menyusun jawaban"}
         />
 
         <ChatInput

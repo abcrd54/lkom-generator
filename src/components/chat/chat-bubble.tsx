@@ -11,9 +11,15 @@ interface ChatBubbleProps {
   message: ChatMessage;
   isStreaming?: boolean;
   isPending?: boolean;
+  pendingText?: string;
 }
 
-export function ChatBubble({ message, isStreaming, isPending }: ChatBubbleProps) {
+export function ChatBubble({
+  message,
+  isStreaming,
+  isPending,
+  pendingText = "AI sedang menyusun jawaban",
+}: ChatBubbleProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
 
@@ -90,7 +96,7 @@ export function ChatBubble({ message, isStreaming, isPending }: ChatBubbleProps)
             <div className="space-y-3 min-w-[220px]">
               <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                 <span className="inline-flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                AI sedang menyusun jawaban
+                {pendingText}
               </div>
               <div className="space-y-2">
                 <div className="h-2.5 w-40 rounded-full bg-slate-200/90 animate-pulse" />

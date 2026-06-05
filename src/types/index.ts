@@ -60,6 +60,11 @@ export interface ImageGenerateRequest {
     mimeType: string;
     name: string;
   };
+  referenceImages?: {
+    dataUrl: string;
+    mimeType: string;
+    name: string;
+  }[];
 }
 
 export interface ChatMessage {
