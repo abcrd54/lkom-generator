@@ -54,6 +54,32 @@ function generatePassword() {
   return crypto.randomBytes(24).toString("base64url");
 }
 
+function normalize9RouterBaseURL(rawValue) {
+  const fallback = "http://host.docker.internal:20128";
+  const value = (rawValue || "").trim();
+  if (!value) return fallback;
+
+  const sanitized = value
+    .replace(/\/:([0-9]+)(?=\/|$)/, ":$1")
+    .replace(/\/+$/, "")
+    .replace(/\/v1$/, "");
+
+  try {
+    const parsed = new URL(sanitized);
+    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
+      parsed.hostname = "host.docker.internal";
+    }
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    const pathname = parsed.pathname === "/v1" ? "" : parsed.pathname;
+    return `${parsed.origin}${pathname === "/" ? "" : pathname}`;
+  } catch {
+    if (/^https?:\/\//i.test(sanitized)) {
+      return sanitized.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal");
+    }
+    return `${fallback}${sanitized.startsWith("/") ? "" : "/"}${sanitized}`;
+  }
+}
+
 function connect() {
   return new Promise(async (resolve, reject) => {
     const privateKey = await readPrivateKey(path.resolve(rootDir, keyPath));
@@ -311,10 +337,7 @@ async function uploadProject(client) {
 async function writeWorkerEnv(client) {
   const env = await readLocalEnv();
   const redisPassword = generatePassword();
-  const local9RouterUrl = env.get("NINEROUTER_BASE_URL") || "http://host.docker.internal:20128";
-  const worker9RouterUrl = /localhost|127\.0\.0\.1/.test(local9RouterUrl)
-    ? "http://host.docker.internal:20128"
-    : local9RouterUrl;
+  const worker9RouterUrl = normalize9RouterBaseURL(env.get("NINEROUTER_BASE_URL"));
   const lines = [
     `REDIS_PASSWORD=${redisPassword}`,
     `REDIS_URL=redis://:${redisPassword}@redis:6379`,

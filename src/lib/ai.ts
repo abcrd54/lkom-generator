@@ -1,10 +1,39 @@
 import OpenAI from "openai";
 
+function normalize9RouterBaseURL(rawValue?: string) {
+  const fallback = "http://localhost:20128";
+  const value = rawValue?.trim();
+  if (!value) return fallback;
+
+  const sanitized = value
+    .replace(/\/:([0-9]+)(?=\/|$)/, ":$1")
+    .replace(/\/+$/, "")
+    .replace(/\/v1$/, "");
+
+  try {
+    const parsed = new URL(sanitized);
+    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
+      parsed.hostname = "localhost";
+    }
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    const pathname = parsed.pathname === "/v1" ? "" : parsed.pathname;
+    return `${parsed.origin}${pathname === "/" ? "" : pathname}`;
+  } catch {
+    if (/^https?:\/\//i.test(sanitized)) {
+      return sanitized;
+    }
+    return `${fallback}${sanitized.startsWith("/") ? "" : "/"}${sanitized}`;
+  }
+}
+
+function get9RouterBaseURL() {
+  return normalize9RouterBaseURL(process.env.NINEROUTER_BASE_URL);
+}
+
 export function create9RouterClient() {
+  const baseURL = get9RouterBaseURL();
   return new OpenAI({
-    baseURL: process.env.NINEROUTER_BASE_URL
-      ? `${process.env.NINEROUTER_BASE_URL}/v1`
-      : "http://localhost:20128/v1",
+    baseURL: `${baseURL}/v1`,
     apiKey: process.env.NINEROUTER_API_KEY || "sk_9router",
   });
 }
@@ -39,9 +68,7 @@ export async function generateImage(params: {
   referenceImageDataUrl?: string;
 }) {
   const apiKey = process.env.NINEROUTER_API_KEY || "sk_9router";
-  const baseURL = process.env.NINEROUTER_BASE_URL
-    ? `${process.env.NINEROUTER_BASE_URL}/v1`
-    : "http://localhost:20128/v1";
+  const baseURL = `${get9RouterBaseURL()}/v1`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 180000); // 180 detik timeout
