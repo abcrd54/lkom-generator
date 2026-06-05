@@ -45,11 +45,15 @@ export function useChat() {
     setMessages((prev) => [...prev, userMsg]);
 
     // Save user message to DB
-    await supabase.from("messages").insert({
+    const { error: insertError } = await supabase.from("messages").insert({
       conversation_id: conversationId,
       role: "user",
       content,
     });
+
+    if (insertError) {
+      throw insertError;
+    }
 
     // Update conversation title if first message
     const { data: conv } = await supabase

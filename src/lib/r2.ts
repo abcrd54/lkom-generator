@@ -25,5 +25,3 @@ export async function uploadToR2(params: {
 
   return `${process.env.R2_PUBLIC_URL}/${params.key}`;
 }
-
-export { r2Client };

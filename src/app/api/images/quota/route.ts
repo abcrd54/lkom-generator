@@ -10,32 +10,34 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const { data, error: quotaError } = await supabase.rpc("get_image_quota", {
+      p_user_id: user.id,
+    });
 
-    const { count } = await supabase
-      .from("usage_logs")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("type", "image")
-      .gte("created_at", today.toISOString());
+    if (quotaError) {
+      throw quotaError;
+    }
 
-    const used = count || 0;
-    const remaining = 15 - used;
+    const quota = Array.isArray(data) ? data[0] : data;
 
-    const resetAt = new Date(today);
-    resetAt.setDate(resetAt.getDate() + 1);
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("daily_image_limit")
+      .eq("id", user.id)
+      .single();
 
     return NextResponse.json({
-      used,
-      remaining: Math.max(0, remaining),
-      resetAt: resetAt.toISOString(),
+      used: quota?.used ?? 0,
+      remaining: quota?.remaining ?? 0,
+      limit: profile?.daily_image_limit ?? 15,
+      resetAt: quota?.reset_at ?? new Date().toISOString(),
     });
   } catch (error) {
     console.error("Quota error:", error);
     return NextResponse.json({
       used: 0,
       remaining: 15,
+      limit: 15,
       resetAt: new Date().toISOString(),
     });
   }

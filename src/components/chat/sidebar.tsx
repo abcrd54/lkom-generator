@@ -89,8 +89,10 @@ export function Sidebar({ currentConversationId, onSelectConversation, onNewChat
   }, [supabase]);
 
   useEffect(() => {
-    fetchConversations();
-    fetchProfile();
+    queueMicrotask(() => {
+      fetchConversations();
+      fetchProfile();
+    });
   }, [fetchConversations, fetchProfile, refreshTrigger]);
 
   const handleDelete = async (id: string) => {

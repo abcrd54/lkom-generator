@@ -70,5 +70,6 @@ export interface ChatMessage {
 export interface ImageQuota {
   used: number;
   remaining: number;
+  limit: number;
   resetAt: string;
 }

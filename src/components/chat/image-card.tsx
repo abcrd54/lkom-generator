@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Download, ExternalLink, Loader2 } from "lucide-react";
+import Image from "next/image";
 import { useState } from "react";
 
 interface ImageCardProps {
@@ -13,9 +14,10 @@ interface ImageCardProps {
 export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [renderedAt] = useState(() => Date.now());
 
   const daysLeft = expiresAt
-    ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - renderedAt) / (1000 * 60 * 60 * 24)))
     : null;
 
   const handleDownload = async () => {
@@ -48,9 +50,12 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
             Gagal memuat gambar
           </div>
         ) : (
-          <img
+          <Image
             src={url}
             alt={alt}
+            width={384}
+            height={192}
+            unoptimized
             className={`w-full max-h-48 object-cover ${loading ? "hidden" : ""}`}
             onLoad={() => setLoading(false)}
             onError={() => {

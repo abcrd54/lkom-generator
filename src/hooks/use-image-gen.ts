@@ -5,6 +5,13 @@ import { createClient } from "@/lib/supabase/client";
 import type { ImageGenerateRequest, ImageQuota, ChatMessage } from "@/types";
 import { toast } from "sonner";
 
+const IMAGE_JOB_POLL_INTERVAL = 2000;
+const IMAGE_JOB_TIMEOUT = 240000;
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function useImageGen() {
   const [loading, setLoading] = useState(false);
   const [quota, setQuota] = useState<ImageQuota | null>(null);
@@ -46,17 +53,48 @@ export function useImageGen() {
         return null;
       }
 
-      // Save message with image
+      if (!data.jobId) {
+        toast.error("Job gambar tidak valid");
+        return null;
+      }
+
+      toast.info("Gambar masuk antrean");
+
+      const startedAt = Date.now();
+      let result: { messageId: string; imageUrl: string } | null = null;
+
+      while (Date.now() - startedAt < IMAGE_JOB_TIMEOUT) {
+        await wait(IMAGE_JOB_POLL_INTERVAL);
+
+        const statusRes = await fetch(`/api/images/status/${data.jobId}`);
+        const statusData = await statusRes.json();
+
+        if (!statusRes.ok) {
+          toast.error(statusData.error || "Gagal mengambil status gambar");
+          return null;
+        }
+
+        if (statusData.status === "completed") {
+          result = statusData.result;
+          break;
+        }
+
+        if (statusData.status === "failed") {
+          toast.error(statusData.error || "Gagal generate gambar");
+          return null;
+        }
+      }
+
+      if (!result) {
+        toast.error("Generate gambar terlalu lama. Cek percakapan beberapa saat lagi.");
+        return null;
+      }
+
       const { data: savedMsg } = await supabase
         .from("messages")
-        .insert({
-          conversation_id: conversationId,
-          role: "assistant",
-          content: `Gambar: ${options.prompt}`,
-          model: "cx/gpt-5.5-image",
-          image_url: data.imageUrl,
-        })
-        .select()
+        .select("*")
+        .eq("id", result.messageId)
+        .eq("conversation_id", conversationId)
         .single();
 
       // Update quota
@@ -68,7 +106,7 @@ export function useImageGen() {
           role: "assistant",
           content: `Gambar: ${options.prompt}`,
           model: "cx/gpt-5.5-image",
-          imageUrl: data.imageUrl,
+          imageUrl: savedMsg.image_url || result.imageUrl,
           createdAt: savedMsg.created_at,
         };
       }

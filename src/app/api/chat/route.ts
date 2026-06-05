@@ -47,6 +47,11 @@ export async function POST(request: NextRequest) {
       })),
     ];
 
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role !== "user" || lastMessage.content !== message) {
+      messages.push({ role: "user" as const, content: message });
+    }
+
     // Create SSE stream
     const encoder = new TextEncoder();
     const stream = new ReadableStream({

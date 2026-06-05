@@ -51,6 +51,14 @@ async function fallbackRateLimit(userId: string): Promise<{
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("daily_image_limit")
+    .eq("id", userId)
+    .single();
+
+  const dailyLimit = profile?.daily_image_limit ?? DAILY_IMAGE_LIMIT;
+
   const { count } = await supabase
     .from("usage_logs")
     .select("*", { count: "exact", head: true })
@@ -59,7 +67,7 @@ async function fallbackRateLimit(userId: string): Promise<{
     .gte("created_at", today.toISOString());
 
   const used = count || 0;
-  const remaining = DAILY_IMAGE_LIMIT - used;
+  const remaining = dailyLimit - used;
   const resetAt = new Date(today);
   resetAt.setDate(resetAt.getDate() + 1);
 

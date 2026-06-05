@@ -164,7 +164,7 @@ export default function ChatPage() {
           </div>
           {quota && (
             <div className="text-xs text-muted-foreground">
-              Sisa kuota gambar: <span className={quota.remaining <= 3 ? "text-red-500 font-medium" : "text-blue-600 font-medium"}>{quota.remaining}/15</span>
+              Sisa kuota gambar: <span className={quota.remaining <= 3 ? "text-red-500 font-medium" : "text-blue-600 font-medium"}>{quota.remaining}/{quota.limit}</span>
             </div>
           )}
         </div>

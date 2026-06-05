@@ -62,6 +62,7 @@ CREATE TABLE public.messages (
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
   content TEXT,
   model TEXT,
+  image_url TEXT,
   tokens_used INT DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -140,6 +141,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Update last_message_at on new message
 CREATE OR REPLACE FUNCTION update_conversation_timestamp()
 RETURNS TRIGGER AS $$
@@ -166,13 +177,31 @@ ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.usage_logs ENABLE ROW LEVEL SECURITY;
 
--- Profiles: authenticated users can do everything (small app, 120 users)
-CREATE POLICY "profiles_all" ON public.profiles
-  FOR ALL USING (auth.role() = 'authenticated');
+-- Profiles: users can read/update only their own profile.
+-- Admin-wide reads/writes are handled through server-side admin routes.
+CREATE POLICY "profiles_select_own" ON public.profiles
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "profiles_update_own" ON public.profiles
+  FOR UPDATE USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "profiles_insert_own" ON public.profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "profiles_select_admin" ON public.profiles
+  FOR SELECT USING (public.is_admin());
+
+CREATE POLICY "profiles_update_admin" ON public.profiles
+  FOR UPDATE USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
 -- Conversations: user can only access own
 CREATE POLICY "conversations_all" ON public.conversations
   FOR ALL USING (auth.uid() = user_id);
+
+CREATE POLICY "conversations_select_admin" ON public.conversations
+  FOR SELECT USING (public.is_admin());
 
 -- Messages: user can access messages in own conversations
 CREATE POLICY "messages_all" ON public.messages
@@ -184,13 +213,22 @@ CREATE POLICY "messages_all" ON public.messages
     )
   );
 
+CREATE POLICY "messages_select_admin" ON public.messages
+  FOR SELECT USING (public.is_admin());
+
 -- Images: user can only access own
 CREATE POLICY "images_all" ON public.images
   FOR ALL USING (auth.uid() = user_id);
 
+CREATE POLICY "images_select_admin" ON public.images
+  FOR SELECT USING (public.is_admin());
+
 -- Usage logs: user can read own, anyone can insert
 CREATE POLICY "usage_select" ON public.usage_logs
   FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "usage_select_admin" ON public.usage_logs
+  FOR SELECT USING (public.is_admin());
 
 CREATE POLICY "usage_insert" ON public.usage_logs
   FOR INSERT WITH CHECK (auth.uid() = user_id);
@@ -211,6 +249,53 @@ BEGIN
   SELECT COUNT(*)::INT INTO v_used FROM usage_logs
     WHERE user_id = p_user_id AND type = 'image' AND created_at >= v_today_start;
   RETURN QUERY SELECT v_used, GREATEST(0, v_limit - v_used), v_today_start + INTERVAL '1 day';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION check_and_log_image_usage(
+  p_user_id UUID,
+  p_model TEXT DEFAULT 'cx/gpt-5.5-image'
+)
+RETURNS JSON AS $$
+DECLARE
+  v_today_start TIMESTAMPTZ;
+  v_used INT;
+  v_limit INT;
+  v_remaining INT;
+  v_reset_at TIMESTAMPTZ;
+  v_allowed BOOLEAN;
+BEGIN
+  v_today_start := DATE_TRUNC('day', NOW());
+
+  SELECT COALESCE(daily_image_limit, 15) INTO v_limit
+  FROM profiles
+  WHERE id = p_user_id
+  FOR UPDATE;
+
+  SELECT COUNT(*)::INT INTO v_used
+  FROM usage_logs
+  WHERE user_id = p_user_id
+    AND type = 'image'
+    AND created_at >= v_today_start;
+
+  v_remaining := v_limit - v_used;
+  v_allowed := v_remaining > 0;
+  v_reset_at := v_today_start + INTERVAL '1 day';
+
+  IF v_allowed THEN
+    INSERT INTO usage_logs (user_id, type, model, tokens)
+    VALUES (p_user_id, 'image', p_model, 0);
+
+    v_used := v_used + 1;
+    v_remaining := v_remaining - 1;
+  END IF;
+
+  RETURN json_build_object(
+    'allowed', v_allowed,
+    'used', v_used,
+    'remaining', GREATEST(0, v_remaining),
+    'reset_at', v_reset_at
+  );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

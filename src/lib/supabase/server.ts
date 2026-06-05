@@ -25,38 +25,3 @@ export async function createClient() {
     }
   );
 }
-
-export async function getServerUser() {
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return null;
-  return user;
-}
-
-export async function getServerProfile() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  let { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
-
-  // Auto-create profile if not exists
-  if (!profile) {
-    const { data: newProfile } = await supabase
-      .from("profiles")
-      .upsert({
-        id: user.id,
-        email: user.email || "",
-        full_name: user.user_metadata?.full_name || "",
-      })
-      .select()
-      .single();
-    profile = newProfile;
-  }
-
-  return profile;
-}

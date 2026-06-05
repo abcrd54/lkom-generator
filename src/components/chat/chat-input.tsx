@@ -29,7 +29,7 @@ interface ChatInputProps {
     watermark?: string;
   }) => void;
   loading: boolean;
-  imageQuota: { remaining: number; resetAt: string } | null;
+  imageQuota: { remaining: number; limit?: number; resetAt: string } | null;
   disabled?: boolean;
 }
 
@@ -273,7 +273,7 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
 
           {mode === "image" && imageQuota && (
             <span className="text-[10px] text-slate-400 ml-2">
-              Sisa: <span className={imageQuota.remaining <= 3 ? "text-red-500 font-medium" : "text-blue-600 font-medium"}>{imageQuota.remaining}</span>/15
+              Sisa: <span className={imageQuota.remaining <= 3 ? "text-red-500 font-medium" : "text-blue-600 font-medium"}>{imageQuota.remaining}</span>/{imageQuota.limit ?? 15}
             </span>
           )}
         </div>

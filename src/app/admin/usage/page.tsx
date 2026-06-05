@@ -49,7 +49,7 @@ export default function AdminUsagePage() {
   }, [supabase, filter]);
 
   useEffect(() => {
-    fetchUsage();
+    queueMicrotask(fetchUsage);
   }, [fetchUsage]);
 
   return (

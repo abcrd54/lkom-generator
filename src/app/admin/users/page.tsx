@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,7 +39,6 @@ export default function AdminUsersPage() {
     fullName: "",
     role: "user" as "user" | "admin",
   });
-  const supabase = createClient();
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -56,7 +54,7 @@ export default function AdminUsersPage() {
   }, []);
 
   useEffect(() => {
-    fetchUsers();
+    queueMicrotask(fetchUsers);
   }, [fetchUsers]);
 
   const handleCreateUser = async () => {
@@ -91,18 +89,30 @@ export default function AdminUsersPage() {
 
   const toggleRole = async (userId: string, currentRole: string) => {
     const newRole = currentRole === "admin" ? "user" : "admin";
-    await supabase
-      .from("profiles")
-      .update({ role: newRole })
-      .eq("id", userId);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, role: newRole }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      toast.error(data.error || "Gagal mengubah role");
+      return;
+    }
     fetchUsers();
   };
 
   const updateLimit = async (userId: string, limit: number) => {
-    await supabase
-      .from("profiles")
-      .update({ daily_image_limit: limit })
-      .eq("id", userId);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, dailyImageLimit: limit }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      toast.error(data.error || "Gagal mengubah limit");
+      return;
+    }
     fetchUsers();
   };
 

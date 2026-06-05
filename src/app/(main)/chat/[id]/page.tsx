@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Sidebar, MobileSidebar } from "@/components/chat/sidebar";
 import { ChatArea } from "@/components/chat/chat-area";
@@ -23,24 +23,21 @@ export default function ChatIdPage() {
   const { loading: imageLoading, quota, generateImage, fetchQuota } = useImageGen();
   const { createConversation, refreshTrigger, refresh } = useConversations();
 
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(conversationId);
+  const currentConversationId = conversationId || null;
 
   useEffect(() => {
     if (conversationId) {
-      setCurrentConversationId(conversationId);
       loadMessages(conversationId);
     }
     fetchQuota();
   }, [conversationId, loadMessages, fetchQuota]);
 
   const handleNewChat = useCallback(async () => {
-    setCurrentConversationId(null);
     setMessages([]);
     router.push("/chat");
   }, [router, setMessages]);
 
   const handleSelectConversation = useCallback((id: string) => {
-    setCurrentConversationId(id);
     loadMessages(id);
     router.push(`/chat/${id}`);
   }, [router, loadMessages]);
@@ -49,7 +46,6 @@ export default function ChatIdPage() {
     if (currentConversationId) return currentConversationId;
     const newId = await createConversation();
     if (newId) {
-      setCurrentConversationId(newId);
       refresh();
       router.push(`/chat/${newId}`);
     }
@@ -140,7 +136,7 @@ export default function ChatIdPage() {
           </div>
           {quota && (
             <div className="text-xs text-muted-foreground">
-              Sisa kuota gambar: <span className={quota.remaining <= 3 ? "text-red-500 font-medium" : "text-blue-600 font-medium"}>{quota.remaining}/15</span>
+              Sisa kuota gambar: <span className={quota.remaining <= 3 ? "text-red-500 font-medium" : "text-blue-600 font-medium"}>{quota.remaining}/{quota.limit}</span>
             </div>
           )}
         </div>

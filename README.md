@@ -1,36 +1,116 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LKOM Generator
 
-## Getting Started
+Next.js app for chat and image generation. The web app can run on Vercel, while image generation runs asynchronously through Redis + BullMQ workers on a VPS.
 
-First, run the development server:
+## Local Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Image Worker
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Image generation uses Redis + BullMQ so long-running image requests are processed outside the web request.
 
-## Learn More
+Required environment:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+REDIS_URL=redis://localhost:6379
+IMAGE_WORKER_CONCURRENCY=5
+IMAGE_QUEUE_MAX_SIZE=500
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Run the web app and worker as separate processes:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run start
+npm run worker:images
+```
 
-## Deploy on Vercel
+## Vercel Web + VPS Worker Setup
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Use this setup when the Next.js web app runs on Vercel, while Redis, the image worker, and 9Router run on a VPS.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 1. Prepare VPS
+
+Copy the repository to the VPS, then create the worker env file:
+
+```bash
+cd deploy/vps
+cp .env.worker.example .env.worker
+```
+
+Edit `deploy/vps/.env.worker` and fill:
+
+```bash
+REDIS_PASSWORD=change-this-long-random-password
+REDIS_URL=redis://:change-this-long-random-password@redis:6379
+IMAGE_WORKER_CONCURRENCY=5
+NEXT_PUBLIC_SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+NINEROUTER_BASE_URL=http://host.docker.internal:20128
+NINEROUTER_API_KEY=...
+R2_ACCOUNT_ID=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_NAME=...
+R2_PUBLIC_URL=...
+```
+
+Use the same Redis password in `REDIS_PASSWORD` and `REDIS_URL`. Use an alphanumeric Redis password to avoid URL escaping issues.
+
+Start Redis and the worker:
+
+```bash
+docker compose --env-file .env.worker up -d --build
+docker compose --env-file .env.worker logs -f image-worker
+```
+
+If 9Router also runs as a Docker service on the same Docker network, set `NINEROUTER_BASE_URL` to that service URL instead, for example `http://9router:20128`.
+
+### 2. Configure Vercel
+
+Set these environment variables in Vercel:
+
+```bash
+REDIS_URL=redis://:YOUR_REDIS_PASSWORD@YOUR_VPS_PUBLIC_IP:6379
+IMAGE_QUEUE_MAX_SIZE=500
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+Keep the existing 9Router and R2 variables if any API routes still need them. Image generation itself is handled by the worker, but quota/status routes still need Supabase and Redis.
+
+### 3. Firewall Note
+
+Because the web app runs on Vercel, Vercel must reach Redis on the VPS. The compose file exposes Redis on port `6379`. At minimum:
+
+- use a strong `REDIS_PASSWORD`
+- do not reuse that password elsewhere
+- restrict port `6379` when your firewall or provider allows it
+- prefer a managed Redis with TLS for production-critical workloads
+
+For a private-only VPS Redis, the web app must also move to the VPS or use a managed/public Redis endpoint; Vercel cannot enqueue jobs into a private Docker network directly.
+
+### 4. Operational Commands
+
+From the repository root:
+
+```bash
+docker compose --env-file deploy/vps/.env.worker -f deploy/vps/docker-compose.yml ps
+docker compose --env-file deploy/vps/.env.worker -f deploy/vps/docker-compose.yml logs -f redis
+docker compose --env-file deploy/vps/.env.worker -f deploy/vps/docker-compose.yml logs -f image-worker
+docker compose --env-file deploy/vps/.env.worker -f deploy/vps/docker-compose.yml restart image-worker
+docker compose --env-file deploy/vps/.env.worker -f deploy/vps/docker-compose.yml pull
+docker compose --env-file deploy/vps/.env.worker -f deploy/vps/docker-compose.yml up -d --build
+```
+
+Check queue counts from the web app:
+
+```bash
+curl https://your-vercel-domain.vercel.app/api/queue
+```

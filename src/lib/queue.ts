@@ -84,4 +84,3 @@ class RequestQueue {
 }
 
 export const chatQueue = new RequestQueue(20, 200);
-export const imageQueue = new RequestQueue(3, 30);  // 3 concurrent, max 30 queued

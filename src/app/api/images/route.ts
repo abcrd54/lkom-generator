@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { generateImage } from "@/lib/ai";
 import { buildImagePrompt } from "@/lib/prompts";
 import { checkImageRateLimit } from "@/lib/rate-limit";
-import { uploadToR2 } from "@/lib/r2";
-import { imageQueue } from "@/lib/queue";
-import { randomUUID } from "crypto";
+import { getImageQueue } from "@/lib/image-jobs";
 import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage } from "@/types";
 
 export async function POST(request: NextRequest) {
@@ -15,15 +12,6 @@ export async function POST(request: NextRequest) {
 
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Check rate limit
-    const rateLimit = await checkImageRateLimit(user.id);
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "Kuota gambar harian habis", resetAt: rateLimit.resetAt },
-        { status: 429 }
-      );
     }
 
     // Parse body with error handling
@@ -43,6 +31,7 @@ export async function POST(request: NextRequest) {
       colorTheme = "blue",
       language = "id",
       watermark,
+      conversationId,
     } = body as {
       prompt: string;
       style: ImageStyle;
@@ -52,10 +41,36 @@ export async function POST(request: NextRequest) {
       colorTheme: string;
       language: ImageLanguage;
       watermark?: string;
+      conversationId?: string;
     };
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    }
+
+    if (!conversationId) {
+      return NextResponse.json({ error: "Conversation ID is required" }, { status: 400 });
+    }
+
+    const { data: conversation } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("id", conversationId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!conversation) {
+      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    }
+
+    // Check rate limit only after the request is valid. This function logs
+    // usage atomically, so calling it earlier would charge invalid requests.
+    const rateLimit = await checkImageRateLimit(user.id);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Kuota gambar harian habis", resetAt: rateLimit.resetAt },
+        { status: 429 }
+      );
     }
 
     // Build final prompt
@@ -69,89 +84,44 @@ export async function POST(request: NextRequest) {
       watermark,
     });
 
-    try {
-      // Queue: max 3 concurrent image generations to 9Router
-      const response = await imageQueue.add(() =>
-        generateImage({
-          prompt: finalPrompt,
-          model: "cx/gpt-5.5-image",
-          size: "auto",
-          quality: "medium",
-          background: "auto",
-          image_detail: "high",
-          output_format: "png",
-        })
+    const queue = getImageQueue();
+    const counts = await queue.getJobCounts("waiting", "delayed", "active", "paused");
+    const queued = counts.waiting + counts.delayed + counts.active + counts.paused;
+    const maxQueueSize = Number.parseInt(process.env.IMAGE_QUEUE_MAX_SIZE || "500", 10);
+
+    if (queued >= maxQueueSize) {
+      return NextResponse.json(
+        { error: "Server sibuk, coba lagi dalam beberapa saat" },
+        { status: 503 }
       );
-
-      // Extract image from response
-      const imageData = response?.data?.[0];
-      if (!imageData) {
-        return NextResponse.json({ error: "No image generated", raw: response }, { status: 500 });
-      }
-
-      let imageBuffer: Buffer;
-      let contentType = "image/png";
-
-      if (imageData.b64_json) {
-        imageBuffer = Buffer.from(imageData.b64_json, "base64");
-      } else if (imageData.url) {
-        const imgResponse = await fetch(imageData.url);
-        const arrayBuffer = await imgResponse.arrayBuffer();
-        imageBuffer = Buffer.from(arrayBuffer);
-        contentType = imgResponse.headers.get("content-type") || "image/png";
-      } else {
-        return NextResponse.json({ error: "Could not extract image from response" }, { status: 500 });
-      }
-
-      // Upload to R2
-      const key = `images/${user.id}/${randomUUID()}.png`;
-      const imageUrl = await uploadToR2({
-        key,
-        body: imageBuffer,
-        contentType,
-      });
-
-      // Save to database
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      const { data: savedImage } = await supabase
-        .from("images")
-        .insert({
-          user_id: user.id,
-          r2_url: imageUrl,
-          prompt: finalPrompt,
-          style,
-          age_group: ageGroup,
-          aspect_ratio: aspectRatio,
-          detail_level: detailLevel,
-          color_theme: colorTheme,
-          language,
-          watermark: watermark || null,
-          model: "cx/gpt-5.5-image",
-          expires_at: expiresAt.toISOString(),
-        })
-        .select()
-        .single();
-
-      // Usage already logged by atomic rate limit function
-
-      return NextResponse.json({
-        imageUrl,
-        imageId: savedImage?.id,
-        prompt: finalPrompt,
-        metadata: { style, ageGroup, aspectRatio, detailLevel, colorTheme, language, watermark },
-        queue: imageQueue.stats,
-      });
-    } catch (queueError) {
-      if (queueError instanceof Error && queueError.message === "Queue penuh") {
-        return NextResponse.json(
-          { error: "Server sibuk, coba lagi dalam beberapa saat" },
-          { status: 503 }
-        );
-      }
-      throw queueError;
     }
+
+    const job = await queue.add("generate", {
+      userId: user.id,
+      conversationId,
+      originalPrompt: prompt,
+      finalPrompt,
+      style,
+      ageGroup,
+      aspectRatio,
+      detailLevel,
+      colorTheme,
+      language,
+      watermark,
+    });
+
+    return NextResponse.json(
+      {
+        jobId: job.id,
+        status: "queued",
+        queue: {
+          waiting: counts.waiting,
+          active: counts.active,
+          delayed: counts.delayed,
+        },
+      },
+      { status: 202 }
+    );
   } catch (error) {
     console.error("Image generation error:", error);
     return NextResponse.json(

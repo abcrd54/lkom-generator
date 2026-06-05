@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "worker:images": "tsx src/workers/image-worker.ts",
     "lint": "eslint"
   },
   "dependencies": {
@@ -13,6 +14,7 @@
     "@base-ui/react": "^1.5.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.107.0",
+    "bullmq": "^5.78.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
@@ -24,7 +26,9 @@
     "react-dom": "19.2.4",
     "shadcn": "^4.10.0",
     "sonner": "^2.0.7",
+    "ssh2": "^1.17.0",
     "tailwind-merge": "^3.6.0",
+    "tsx": "^4.22.4",
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {

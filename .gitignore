@@ -18,15 +18,23 @@
 # misc
 .DS_Store
 *.pem
+*.ppk
+*.key
+*.crt
+*.p12
+*.pfx
+keys/
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
 
 # local env files
-.env*.local
 .env
+.env.*
+!.env.example
 
 # vercel
 .vercel
@@ -38,6 +46,12 @@ next-env.d.ts
 # supabase
 /supabase/.temp
 /supabase/.env
+/deploy/vps/.env.worker
+/deploy/vps/.env.worker.*
+!/deploy/vps/.env.worker.example
+
+# docker
+docker-compose.override.yml
 
 # IDE
 .vscode

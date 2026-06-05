@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, MessageSquare, Image, Activity } from "lucide-react";
+import { Users, MessageSquare, ImageIcon, Activity } from "lucide-react";
 
 interface Stats {
   totalUsers: number;
@@ -50,7 +50,7 @@ export default function AdminDashboard() {
   }, [supabase]);
 
   useEffect(() => {
-    fetchStats();
+    queueMicrotask(fetchStats);
   }, [fetchStats]);
 
   return (
@@ -98,7 +98,7 @@ export default function AdminDashboard() {
             <Card className="border-blue-100">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Gambar Generated</CardTitle>
-                <Image className="h-4 w-4 text-blue-500" />
+                <ImageIcon className="h-4 w-4 text-blue-500" />
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-blue-900">{stats.totalImages}</div>
