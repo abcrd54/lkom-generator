@@ -40,7 +40,12 @@ interface SidebarProps {
   refreshTrigger: number;
 }
 
-export function Sidebar({ currentConversationId, onSelectConversation, onNewChat, refreshTrigger }: SidebarProps) {
+export function Sidebar({
+  currentConversationId,
+  onSelectConversation,
+  onNewChat,
+  refreshTrigger,
+}: SidebarProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,14 +75,19 @@ export function Sidebar({ currentConversationId, onSelectConversation, onNewChat
   }, [supabase]);
 
   const fetchProfile = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (user) {
       // Upsert profile to ensure it exists
-      await supabase.from("profiles").upsert({
-        id: user.id,
-        email: user.email || "",
-        full_name: user.user_metadata?.full_name || "",
-      }, { onConflict: "id" });
+      await supabase.from("profiles").upsert(
+        {
+          id: user.id,
+          email: user.email || "",
+          full_name: user.user_metadata?.full_name || "",
+        },
+        { onConflict: "id" },
+      );
 
       const { data } = await supabase
         .from("profiles")
@@ -239,7 +249,9 @@ export function Sidebar({ currentConversationId, onSelectConversation, onNewChat
                     />
                   ) : (
                     <>
-                      <div className="truncate text-sm font-medium">{conv.title}</div>
+                      <div className="truncate text-sm font-medium">
+                        {conv.title}
+                      </div>
                       <div className="truncate text-xs text-muted-foreground">
                         {formatDistanceToNow(new Date(conv.last_message_at), {
                           addSuffix: true,
@@ -290,11 +302,13 @@ export function Sidebar({ currentConversationId, onSelectConversation, onNewChat
       {/* User Profile */}
       <div className="p-3">
         <div className="mb-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
-          Menggunakan Teknologi CHATGPT PLUS
+          CHATGPT PLUS
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger className="flex w-full items-center gap-2 rounded-md px-2 py-2 hover:bg-blue-50 transition-colors">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-full ${isAdmin ? "bg-blue-600" : "bg-blue-200"}`}>
+            <div
+              className={`flex h-8 w-8 items-center justify-center rounded-full ${isAdmin ? "bg-blue-600" : "bg-blue-200"}`}
+            >
               {isAdmin ? (
                 <Shield className="h-4 w-4 text-white" />
               ) : (
@@ -312,8 +326,12 @@ export function Sidebar({ currentConversationId, onSelectConversation, onNewChat
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <div className="px-2 py-1.5">
-              <div className="text-sm font-medium">{profile?.full_name || "Guru"}</div>
-              <div className="text-xs text-muted-foreground">{profile?.email}</div>
+              <div className="text-sm font-medium">
+                {profile?.full_name || "Guru"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {profile?.email}
+              </div>
               {isAdmin && (
                 <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
                   <Shield className="h-2.5 w-2.5" />
@@ -344,7 +362,10 @@ export function Sidebar({ currentConversationId, onSelectConversation, onNewChat
               Chat Saya
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive" onClick={handleLogout}>
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={handleLogout}
+            >
               <LogOut className="mr-2 h-4 w-4" />
               Keluar
             </DropdownMenuItem>
@@ -366,11 +387,18 @@ export function MobileSidebar({ children }: { children: React.ReactNode }) {
         className="fixed left-3 top-3 z-50 md:hidden"
         onClick={() => setOpen(!open)}
       >
-        {open ? <ChevronLeft className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
+        {open ? (
+          <ChevronLeft className="h-5 w-5" />
+        ) : (
+          <MessageSquare className="h-5 w-5" />
+        )}
       </Button>
       {open && (
         <div className="fixed inset-0 z-40 md:hidden">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setOpen(false)} />
+          <div
+            className="absolute inset-0 bg-black/20"
+            onClick={() => setOpen(false)}
+          />
           <div className="absolute left-0 top-0 h-full">{children}</div>
         </div>
       )}
