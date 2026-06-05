@@ -62,7 +62,6 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
       role: "assistant",
       content: `Gambar: ${data.originalPrompt}`,
       model: IMAGE_MODEL,
-      image_url: imageUrl,
     })
     .select("id, created_at")
     .single();

@@ -4,6 +4,16 @@ import { useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ChatMessage } from "@/types";
 
+type MessageRow = {
+  id: string;
+  role: string;
+  content: string | null;
+  model: string | null;
+  image_url?: string | null;
+  created_at: string;
+  images?: { r2_url: string | null }[] | null;
+};
+
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -14,19 +24,23 @@ export function useChat() {
   const loadMessages = useCallback(async (conversationId: string) => {
     const { data } = await supabase
       .from("messages")
-      .select("*")
+      .select("*, images(r2_url)")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true });
 
     if (data) {
-      const formatted: ChatMessage[] = data.map((m) => ({
+      const formatted: ChatMessage[] = (data as MessageRow[]).map((m) => {
+        const imageUrl = Array.isArray(m.images) ? m.images[0]?.r2_url : undefined;
+
+        return {
         id: m.id,
         role: m.role as "user" | "assistant",
         content: m.content || "",
         model: m.model || undefined,
-        imageUrl: m.image_url || undefined,
+        imageUrl: imageUrl || m.image_url || undefined,
         createdAt: m.created_at,
-      }));
+        };
+      });
       setMessages(formatted);
     }
   }, [supabase]);
