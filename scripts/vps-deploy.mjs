@@ -17,6 +17,7 @@ const port = Number.parseInt(args.get("port") || "22", 10);
 const keyPath = args.get("key") || "abcrd.ppk";
 const remoteDir = args.get("dir") || `/home/${username}/lkom-generator-worker`;
 const mode = args.get("mode") || "deploy";
+const preserveWorkerEnv = args.get("preserve-worker-env") === "true";
 
 if (!host) {
   throw new Error("Missing --host=...");
@@ -334,6 +335,16 @@ async function uploadProject(client) {
   );
 }
 
+async function preserveRemoteWorkerEnv(client) {
+  const oldFile = `${remoteDir}.old/deploy/vps/.env.worker`;
+  const finalFile = `${remoteDir}/deploy/vps/.env.worker`;
+  await exec(
+    client,
+    `if [ -f ${oldFile} ]; then cp ${oldFile} ${finalFile} && chmod 600 ${finalFile}; else exit 2; fi`,
+    { quiet: true }
+  );
+}
+
 async function writeWorkerEnv(client) {
   const env = await readLocalEnv();
   const redisPassword = generatePassword();
@@ -405,7 +416,18 @@ async function main() {
     }
 
     await uploadProject(client);
-    const redisPassword = await writeWorkerEnv(client);
+    let redisPassword = null;
+    if (preserveWorkerEnv) {
+      try {
+        await preserveRemoteWorkerEnv(client);
+        console.log("[deploy] preserved existing deploy/vps/.env.worker");
+      } catch {
+        console.log("[deploy] no existing deploy/vps/.env.worker found, creating a new one");
+        redisPassword = await writeWorkerEnv(client);
+      }
+    } else {
+      redisPassword = await writeWorkerEnv(client);
+    }
 
     await exec(
       client,
@@ -413,7 +435,9 @@ async function main() {
     );
 
     console.log("[deploy] done");
-    console.log(`[deploy] set this in Vercel: REDIS_URL=redis://:${redisPassword}@${host}:6379`);
+    if (redisPassword) {
+      console.log(`[deploy] set this in Vercel: REDIS_URL=redis://:${redisPassword}@${host}:6379`);
+    }
   } finally {
     client.end();
   }
