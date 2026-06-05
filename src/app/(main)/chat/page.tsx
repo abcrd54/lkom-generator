@@ -10,7 +10,7 @@ import { ChatInput } from "@/components/chat/chat-input";
 import { useChat } from "@/hooks/use-chat";
 import { useImageGen } from "@/hooks/use-image-gen";
 import { useConversations } from "@/hooks/use-conversations";
-import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage } from "@/types";
+import type { ImageGenerateRequest } from "@/types";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 
@@ -81,25 +81,21 @@ export default function ChatPage() {
   }, [currentConversationId, createConversation, refresh]);
 
   const handleSendMessage = useCallback(async (content: string) => {
+    const shouldNavigate = !currentConversationId;
     const convId = await ensureConversation();
     if (!convId) {
       toast.error("Gagal membuat percakapan");
       return;
     }
     await sendMessage(content, convId);
+    if (shouldNavigate) {
+      router.replace(`/chat/${convId}`);
+    }
     refresh();
-  }, [ensureConversation, sendMessage, refresh]);
+  }, [currentConversationId, ensureConversation, sendMessage, refresh, router]);
 
-  const handleGenerateImage = useCallback(async (options: {
-    prompt: string;
-    style: ImageStyle;
-    ageGroup: AgeGroup;
-    aspectRatio: AspectRatio;
-    detailLevel: DetailLevel;
-    colorTheme: string;
-    language: ImageLanguage;
-    watermark?: string;
-  }) => {
+  const handleGenerateImage = useCallback(async (options: ImageGenerateRequest) => {
+    const shouldNavigate = !currentConversationId;
     const convId = await ensureConversation();
     if (!convId) {
       toast.error("Gagal membuat percakapan");
@@ -126,9 +122,12 @@ export default function ChatPage() {
     const result = await generateImage(options, convId);
     if (result) {
       setMessages((prev) => [...prev, result]);
+      if (shouldNavigate) {
+        router.replace(`/chat/${convId}`);
+      }
       refresh();
     }
-  }, [ensureConversation, generateImage, setMessages, refresh]);
+  }, [currentConversationId, ensureConversation, generateImage, setMessages, refresh, router]);
 
   const loading = chatLoading || imageLoading;
 

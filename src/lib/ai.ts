@@ -36,6 +36,7 @@ export async function generateImage(params: {
   background?: string;
   image_detail?: string;
   output_format?: string;
+  referenceImageDataUrl?: string;
 }) {
   const apiKey = process.env.NINEROUTER_API_KEY || "sk_9router";
   const baseURL = process.env.NINEROUTER_BASE_URL
@@ -49,24 +50,47 @@ export async function generateImage(params: {
     console.log(`[ImageGen] Starting request to ${baseURL}/images/generations`);
     console.log(`[ImageGen] Model: ${params.model}, Size: ${params.size}`);
 
-    const response = await fetch(`${baseURL}/images/generations`, {
+    const basePayload = {
+      model: params.model || "cx/gpt-5.5-image",
+      prompt: params.prompt,
+      n: 1,
+      size: params.size || "auto",
+      quality: "medium",
+      background: "auto",
+      image_detail: "high",
+      output_format: "png",
+    };
+
+    const payload = params.referenceImageDataUrl
+      ? {
+          ...basePayload,
+          input_image: params.referenceImageDataUrl,
+        }
+      : basePayload;
+
+    let response = await fetch(`${baseURL}/images/generations`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: params.model || "cx/gpt-5.5-image",
-        prompt: params.prompt,
-        n: 1,
-        size: params.size || "auto",
-        quality: "medium",
-        background: "auto",
-        image_detail: "high",
-        output_format: "png",
-      }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
+
+    if (!response.ok && params.referenceImageDataUrl && response.status === 400) {
+      const errorText = await response.text();
+      console.warn("[ImageGen] Reference image rejected, retrying without input_image:", errorText);
+      response = await fetch(`${baseURL}/images/generations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(basePayload),
+        signal: controller.signal,
+      });
+    }
 
     clearTimeout(timeoutId);
     console.log(`[ImageGen] Response status: ${response.status}`);

@@ -31,10 +31,9 @@ export function useConversations() {
     if (error || !data) return null;
 
     setCurrentId(data.id);
-    router.push(`/chat/${data.id}`);
     refresh();
     return data.id;
-  }, [supabase, router, refresh]);
+  }, [supabase, refresh]);
 
   const selectConversation = useCallback((id: string) => {
     setCurrentId(id);

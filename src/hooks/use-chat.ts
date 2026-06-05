@@ -35,7 +35,6 @@ export function useChat() {
     setLoading(true);
     setStreamingContent("");
 
-    // Add user message to UI immediately
     const userMsg: ChatMessage = {
       id: `temp-${Date.now()}`,
       role: "user",
@@ -44,34 +43,31 @@ export function useChat() {
     };
     setMessages((prev) => [...prev, userMsg]);
 
-    // Save user message to DB
-    const { error: insertError } = await supabase.from("messages").insert({
-      conversation_id: conversationId,
-      role: "user",
-      content,
-    });
-
-    if (insertError) {
-      throw insertError;
-    }
-
-    // Update conversation title if first message
-    const { data: conv } = await supabase
-      .from("conversations")
-      .select("title")
-      .eq("id", conversationId)
-      .single();
-
-    if (conv?.title === "Chat Baru") {
-      const title = content.length > 50 ? content.slice(0, 50) + "..." : content;
-      await supabase
-        .from("conversations")
-        .update({ title })
-        .eq("id", conversationId);
-    }
-
-    // Stream response
     try {
+      const { error: insertError } = await supabase.from("messages").insert({
+        conversation_id: conversationId,
+        role: "user",
+        content,
+      });
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      const { data: conv } = await supabase
+        .from("conversations")
+        .select("title")
+        .eq("id", conversationId)
+        .single();
+
+      if (conv?.title === "Chat Baru") {
+        const title = content.length > 50 ? content.slice(0, 50) + "..." : content;
+        await supabase
+          .from("conversations")
+          .update({ title })
+          .eq("id", conversationId);
+      }
+
       abortRef.current = new AbortController();
 
       const response = await fetch("/api/chat", {

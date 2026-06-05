@@ -10,9 +10,10 @@ import type { ChatMessage } from "@/types";
 interface ChatBubbleProps {
   message: ChatMessage;
   isStreaming?: boolean;
+  isPending?: boolean;
 }
 
-export function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
+export function ChatBubble({ message, isStreaming, isPending }: ChatBubbleProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
 
@@ -85,6 +86,20 @@ export function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
             </div>
           )}
 
+          {isPending && !message.content && (
+            <div className="space-y-3 min-w-[220px]">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                <span className="inline-flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                AI sedang menyusun jawaban
+              </div>
+              <div className="space-y-2">
+                <div className="h-2.5 w-40 rounded-full bg-slate-200/90 animate-pulse" />
+                <div className="h-2.5 w-56 rounded-full bg-slate-200/80 animate-pulse [animation-delay:150ms]" />
+                <div className="h-2.5 w-32 rounded-full bg-slate-200/70 animate-pulse [animation-delay:300ms]" />
+              </div>
+            </div>
+          )}
+
           {message.imageUrl && (
             <div className="mt-3">
               <ImageCard url={message.imageUrl} />
@@ -93,7 +108,7 @@ export function ChatBubble({ message, isStreaming }: ChatBubbleProps) {
 
           {/* Streaming indicator */}
           {isStreaming && (
-            <span className="inline-flex gap-1 ml-1">
+            <span className="inline-flex gap-1 ml-1 mt-2">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: "0ms" }} />
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: "200ms" }} />
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: "400ms" }} />

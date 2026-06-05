@@ -71,20 +71,17 @@ export function ChatArea({ messages, loading, streamingContent }: ChatAreaProps)
           />
         )}
 
-        {/* Loading dots before stream starts */}
+        {/* Pending AI bubble before stream starts */}
         {loading && !streamingContent && (
-          <div className="flex gap-3 justify-start">
-            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-              <GraduationCap className="h-4 w-4 text-blue-600" />
-            </div>
-            <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-5 py-4 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-blue-400 animate-bounce [animation-delay:0ms]" />
-                <span className="h-2 w-2 rounded-full bg-blue-400 animate-bounce [animation-delay:150ms]" />
-                <span className="h-2 w-2 rounded-full bg-blue-400 animate-bounce [animation-delay:300ms]" />
-              </div>
-            </div>
-          </div>
+          <ChatBubble
+            message={{
+              id: "pending",
+              role: "assistant",
+              content: "",
+              createdAt: new Date().toISOString(),
+            }}
+            isPending={true}
+          />
         )}
 
         <div ref={bottomRef} />

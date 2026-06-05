@@ -13,6 +13,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
     background: "auto",
     image_detail: "high",
     output_format: "png",
+    referenceImageDataUrl: data.referenceImage?.dataUrl,
   });
 
   const imageData = response?.data?.[0];

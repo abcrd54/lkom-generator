@@ -55,6 +55,11 @@ export interface ImageGenerateRequest {
   language: ImageLanguage;
   watermark?: string;
   conversationId?: string;
+  referenceImage?: {
+    dataUrl: string;
+    mimeType: string;
+    name: string;
+  };
 }
 
 export interface ChatMessage {

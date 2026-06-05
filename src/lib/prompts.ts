@@ -99,6 +99,7 @@ export function buildImagePrompt(options: {
   customColor?: string;
   language: ImageLanguage;
   watermark?: string;
+  hasReferenceImage?: boolean;
 }): string {
   const parts: string[] = [];
 
@@ -117,6 +118,11 @@ export function buildImagePrompt(options: {
 
   if (options.watermark) {
     parts.push(`Include a small watermark text "${options.watermark}" in the bottom corner, semi-transparent.`);
+  }
+
+  if (options.hasReferenceImage) {
+    parts.push("Use the attached reference image as a strong visual reference for subject identity, composition cues, silhouette, pose, and key visual elements while still following the requested educational style.");
+    parts.push("Do not copy the reference photo literally; transform it cleanly into the requested illustration style.");
   }
 
   return parts.join(" ");

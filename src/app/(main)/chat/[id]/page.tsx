@@ -10,7 +10,7 @@ import { ChatInput } from "@/components/chat/chat-input";
 import { useChat } from "@/hooks/use-chat";
 import { useImageGen } from "@/hooks/use-image-gen";
 import { useConversations } from "@/hooks/use-conversations";
-import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage } from "@/types";
+import type { ImageGenerateRequest } from "@/types";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 
@@ -62,16 +62,7 @@ export default function ChatIdPage() {
     refresh();
   }, [ensureConversation, sendMessage, refresh]);
 
-  const handleGenerateImage = useCallback(async (options: {
-    prompt: string;
-    style: ImageStyle;
-    ageGroup: AgeGroup;
-    aspectRatio: AspectRatio;
-    detailLevel: DetailLevel;
-    colorTheme: string;
-    language: ImageLanguage;
-    watermark?: string;
-  }) => {
+  const handleGenerateImage = useCallback(async (options: ImageGenerateRequest) => {
     const convId = await ensureConversation();
     if (!convId) {
       toast.error("Gagal membuat percakapan");

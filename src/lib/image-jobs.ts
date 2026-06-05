@@ -15,6 +15,11 @@ export interface ImageJobData {
   colorTheme: string;
   language: ImageLanguage;
   watermark?: string;
+  referenceImage?: {
+    dataUrl: string;
+    mimeType: string;
+    name: string;
+  };
 }
 
 export interface ImageJobResult {

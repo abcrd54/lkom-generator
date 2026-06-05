@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
       language = "id",
       watermark,
       conversationId,
+      referenceImage,
     } = body as {
       prompt: string;
       style: ImageStyle;
@@ -42,6 +43,11 @@ export async function POST(request: NextRequest) {
       language: ImageLanguage;
       watermark?: string;
       conversationId?: string;
+      referenceImage?: {
+        dataUrl: string;
+        mimeType: string;
+        name: string;
+      };
     };
 
     if (!prompt) {
@@ -73,6 +79,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (referenceImage?.dataUrl && referenceImage.dataUrl.length > 8_000_000) {
+      return NextResponse.json({ error: "Ukuran gambar referensi terlalu besar" }, { status: 400 });
+    }
+
     // Build final prompt
     const finalPrompt = buildImagePrompt({
       userPrompt: prompt,
@@ -82,6 +92,7 @@ export async function POST(request: NextRequest) {
       colorTheme,
       language,
       watermark,
+      hasReferenceImage: Boolean(referenceImage?.dataUrl),
     });
 
     const queue = getImageQueue();
@@ -108,6 +119,7 @@ export async function POST(request: NextRequest) {
       colorTheme,
       language,
       watermark,
+      referenceImage,
     });
 
     return NextResponse.json(
