@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { User, GraduationCap, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import { ImageCard } from "./image-card";
+import Image from "next/image";
 import type { ChatMessage } from "@/types";
 
 interface ChatBubbleProps {
@@ -111,6 +112,26 @@ export function ChatBubble({
               <ImageCard url={message.imageUrl} />
             </div>
           )}
+
+          {message.referenceImages?.length ? (
+            <div className={`mt-3 flex flex-wrap gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+              {message.referenceImages.map((referenceImage, index) => (
+                <div
+                  key={`${referenceImage.name}-${index}`}
+                  className="group/ref relative h-16 w-16 overflow-hidden rounded-md border border-white/30 bg-white/10"
+                  title={referenceImage.name}
+                >
+                  <Image
+                    src={referenceImage.dataUrl}
+                    alt={referenceImage.name}
+                    fill
+                    unoptimized
+                    className="object-cover"
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {/* Streaming indicator */}
           {isStreaming && (

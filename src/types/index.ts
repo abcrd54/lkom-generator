@@ -73,6 +73,11 @@ export interface ChatMessage {
   content: string;
   model?: string;
   imageUrl?: string;
+  referenceImages?: {
+    dataUrl: string;
+    mimeType: string;
+    name: string;
+  }[];
   imageMetadata?: GeneratedImage;
   createdAt: string;
 }

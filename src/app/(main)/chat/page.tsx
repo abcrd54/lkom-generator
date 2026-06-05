@@ -115,6 +115,7 @@ export default function ChatPage() {
         id: `user-img-${Date.now()}`,
         role: "user",
         content: `[Generate Gambar] ${options.prompt}`,
+        referenceImages: options.referenceImages,
         createdAt: new Date().toISOString(),
       },
     ]);
