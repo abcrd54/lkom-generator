@@ -101,7 +101,7 @@ export function ChatBubble({
                   title={referenceImage.name}
                 >
                   <Image
-                    src={referenceImage.dataUrl}
+                    src={referenceImage.previewUrl || referenceImage.dataUrl || referenceImage.url || ""}
                     alt={referenceImage.name}
                     fill
                     unoptimized

@@ -46,6 +46,14 @@ export type AspectRatio = "3:4" | "1:1" | "16:9" | "9:16" | "4:3";
 export type DetailLevel = "simple" | "medium" | "detailed";
 export type ImageLanguage = "id" | "en" | "bilingual";
 
+export interface ReferenceImage {
+  name: string;
+  mimeType: string;
+  url?: string;
+  dataUrl?: string;
+  previewUrl?: string;
+}
+
 export interface ImageGenerateRequest {
   prompt: string;
   style: ImageStyle;
@@ -56,16 +64,10 @@ export interface ImageGenerateRequest {
   language: ImageLanguage;
   watermark?: string;
   conversationId?: string;
-  referenceImage?: {
-    dataUrl: string;
-    mimeType: string;
-    name: string;
-  };
-  referenceImages?: {
-    dataUrl: string;
-    mimeType: string;
-    name: string;
-  }[];
+  referenceImage?: ReferenceImage;
+  referenceImageUrl?: string;
+  referenceImageUrls?: string[];
+  referenceImages?: ReferenceImage[];
 }
 
 export interface ChatMessage {
@@ -76,11 +78,7 @@ export interface ChatMessage {
   imageUrl?: string;
   imageExpired?: boolean;
   imageExpiresAt?: string;
-  referenceImages?: {
-    dataUrl: string;
-    mimeType: string;
-    name: string;
-  }[];
+  referenceImages?: ReferenceImage[];
   imageMetadata?: GeneratedImage;
   createdAt: string;
 }

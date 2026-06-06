@@ -6,20 +6,76 @@ import type { ImageJobData, ImageJobResult } from "@/lib/image-jobs";
 
 const PRIMARY_IMAGE_MODEL = "cx/gpt-5.5-image";
 
+function parseDataUrl(dataUrl: string) {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) {
+    throw new Error("Invalid reference image data URL.");
+  }
+
+  return {
+    mimeType: match[1],
+    buffer: Buffer.from(match[2], "base64"),
+  };
+}
+
+async function uploadReferenceImages(data: ImageJobData) {
+  if (data.referenceImageUrl) {
+    return [data.referenceImageUrl];
+  }
+
+  if (data.referenceImageUrls?.length) {
+    return data.referenceImageUrls;
+  }
+
+  const sources = data.referenceImages?.length
+    ? data.referenceImages
+    : data.referenceImage
+      ? [data.referenceImage]
+      : [];
+
+  if (!sources.length) {
+    return undefined;
+  }
+
+  return Promise.all(
+    sources.map(async (image, index) => {
+      if (!image.dataUrl) {
+        throw new Error("Missing reference image data URL.");
+      }
+
+      const { mimeType, buffer } = parseDataUrl(image.dataUrl);
+      const extension =
+        mimeType === "image/png"
+          ? "png"
+          : mimeType === "image/webp"
+            ? "webp"
+            : "jpg";
+
+      return uploadToR2({
+        key: `references/${data.userId}/${randomUUID()}-${index}.${extension}`,
+        body: buffer,
+        contentType: mimeType,
+      });
+    })
+  );
+}
+
 export async function processImageJob(data: ImageJobData): Promise<ImageJobResult> {
+  const referenceImageUrls = await uploadReferenceImages(data);
+  const referenceImageUrl =
+    referenceImageUrls?.length === 1 ? referenceImageUrls[0] : undefined;
+
   const response = await generateImage({
     prompt: data.finalPrompt,
+    fallbackPromptWithoutReferences: data.originalPrompt,
     model: PRIMARY_IMAGE_MODEL,
     size: "auto",
-    quality: "medium",
+    quality: "auto",
     background: "auto",
     image_detail: "high",
     output_format: "png",
-    referenceImageDataUrls: data.referenceImages?.length
-      ? data.referenceImages.map((image) => image.dataUrl)
-      : data.referenceImage?.dataUrl
-        ? [data.referenceImage.dataUrl]
-        : undefined,
+    referenceImageUrl,
+    referenceImageUrls: referenceImageUrl ? undefined : referenceImageUrls,
   });
   const usedModel =
     typeof response?._meta?.model === "string" && response._meta.model

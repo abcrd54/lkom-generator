@@ -60,14 +60,97 @@ export async function streamChat(params: {
   return stream;
 }
 
+function parseSsePayload(body: string) {
+  const events = body
+    .split(/\r?\n\r?\n/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  let lastJsonText: string | null = null;
+  let partialImageBase64: string | null = null;
+
+  for (const eventChunk of events) {
+    const lines = eventChunk.split(/\r?\n/);
+    const eventName =
+      lines.find((line) => line.startsWith("event:"))?.slice(6).trim() || "";
+    const dataLines = lines
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .filter(Boolean);
+
+    if (dataLines.length === 0) {
+      continue;
+    }
+
+    const joined = dataLines.join("\n");
+    if (joined === "[DONE]") {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(joined);
+      if (Array.isArray(parsed?.data) && parsed.data.length > 0) {
+        lastJsonText = joined;
+      }
+
+      if (typeof parsed?.b64_json === "string" && parsed.b64_json.length > 0) {
+        partialImageBase64 = parsed.b64_json;
+      }
+
+      if (eventName === "response.output_item.done" && Array.isArray(parsed?.item?.result)) {
+        const imageItem = parsed.item.result.find(
+          (item: unknown) =>
+            item &&
+            typeof item === "object" &&
+            ("b64_json" in item || "url" in item)
+        ) as { b64_json?: string; url?: string } | undefined;
+
+        if (imageItem) {
+          console.log("[ImageGen] SSE parser using response.output_item.done result");
+          return { data: [imageItem] };
+        }
+      }
+    } catch {
+      // Ignore non-JSON event payloads and keep scanning for the final image event.
+    }
+  }
+
+  if (partialImageBase64) {
+    console.log("[ImageGen] SSE parser using partial_image fallback");
+    return {
+      data: [{ b64_json: partialImageBase64 }],
+    };
+  }
+
+  if (!lastJsonText) {
+    throw new Error("Image generation returned an empty SSE payload.");
+  }
+
+  return JSON.parse(lastJsonText);
+}
+
+async function parseImageGenerationResponse(response: Response) {
+  const contentType = response.headers.get("content-type") || "";
+  const rawBody = await response.text();
+
+  if (contentType.includes("text/event-stream") || rawBody.trimStart().startsWith("event:")) {
+    return parseSsePayload(rawBody);
+  }
+
+  return JSON.parse(rawBody);
+}
+
 export async function generateImage(params: {
   prompt: string;
+  fallbackPromptWithoutReferences?: string;
   model?: string;
   size?: string;
   quality?: string;
   background?: string;
   image_detail?: string;
   output_format?: string;
+  referenceImageUrl?: string;
+  referenceImageUrls?: string[];
   referenceImageDataUrl?: string;
   referenceImageDataUrls?: string[];
 }) {
@@ -84,11 +167,15 @@ export async function generateImage(params: {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 180000); // 180 detik timeout
 
-  const executeRequest = async (payload: Record<string, unknown>) => {
+  const executeRequest = async (
+    payload: Record<string, unknown>,
+    accept: "application/json" | "text/event-stream" = "application/json"
+  ) => {
     return fetch(`${baseURL}/images/generations`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Accept: accept,
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(payload),
@@ -111,9 +198,14 @@ export async function generateImage(params: {
   try {
     console.log(`[ImageGen] Starting request to ${baseURL}/images/generations`);
     console.log(`[ImageGen] Requested model: ${requestedModel}, Size: ${params.size}`);
+    console.log(`[ImageGen] API key prefix: ${apiKey.slice(0, 12)}`);
 
     const referenceImages =
-      params.referenceImageDataUrls?.length
+      params.referenceImageUrl
+        ? [params.referenceImageUrl]
+        : params.referenceImageUrls?.length
+        ? params.referenceImageUrls
+        : params.referenceImageDataUrls?.length
         ? params.referenceImageDataUrls
         : params.referenceImageDataUrl
           ? [params.referenceImageDataUrl]
@@ -127,11 +219,23 @@ export async function generateImage(params: {
         prompt: params.prompt,
         n: 1,
         size: params.size || "auto",
-        quality: "medium",
-        background: "auto",
-        image_detail: "high",
-        output_format: "png",
+        quality: params.quality || "auto",
+        background: params.background || "auto",
+        image_detail: params.image_detail || "high",
+        output_format: params.output_format || "png",
       };
+      const noReferencePayload = {
+        ...basePayload,
+        prompt: params.fallbackPromptWithoutReferences || params.prompt,
+      };
+
+      console.log(
+        `[ImageGen] Payload config -> model=${model}, size=${String(basePayload.size)}, quality=${String(
+          basePayload.quality
+        )}, background=${String(basePayload.background)}, image_detail=${String(
+          basePayload.image_detail
+        )}, output_format=${String(basePayload.output_format)}, references=${referenceImages.length}`
+      );
 
       const payload = referenceImages.length
         ? {
@@ -139,8 +243,10 @@ export async function generateImage(params: {
             image: referenceImages.length === 1 ? referenceImages[0] : referenceImages,
           }
         : basePayload;
+      const hasReferencePayload = referenceImages.length > 0;
+      let attemptedWithoutReference = !hasReferencePayload;
 
-      let response = await executeRequest(payload);
+      let response = await executeRequest(payload, "application/json");
 
       if (!response.ok && referenceImages.length > 1 && response.status === 400) {
         const errorText = await response.text();
@@ -151,25 +257,73 @@ export async function generateImage(params: {
         });
       }
 
-      if (!response.ok && referenceImages.length && response.status === 400) {
+      if (!response.ok && hasReferencePayload && response.status === 400) {
         const errorText = await response.text();
         console.warn(`[ImageGen] ${model} rejected reference image, retrying without image:`, errorText);
-        response = await executeRequest(basePayload);
+        attemptedWithoutReference = true;
+        response = await executeRequest(noReferencePayload);
+      }
+
+      if (!response.ok && hasReferencePayload && !attemptedWithoutReference) {
+        const errorText = await response.text();
+
+        if (shouldFallbackModel(response.status, errorText)) {
+          console.warn(
+            `[ImageGen] ${model} failed with reference image, retrying once without image:`,
+            errorText
+          );
+          attemptedWithoutReference = true;
+          response = await executeRequest(noReferencePayload);
+        } else {
+          response = new Response(errorText, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+        }
       }
 
       console.log(`[ImageGen] Model ${model} response status: ${response.status}`);
 
       if (response.ok) {
-        clearTimeout(timeoutId);
-        const result = await response.json();
-        console.log(`[ImageGen] Success with ${model}, got ${result?.data?.length || 0} images`);
-        return {
-          ...result,
-          _meta: {
-            model,
-            fallbackUsed: model !== requestedModel,
-          },
-        };
+        try {
+          clearTimeout(timeoutId);
+          const result = await parseImageGenerationResponse(response);
+          console.log(`[ImageGen] Success with ${model}, got ${result?.data?.length || 0} images`);
+          return {
+            ...result,
+            _meta: {
+              model,
+              fallbackUsed: model !== requestedModel,
+            },
+          };
+        } catch (parseError) {
+          const parseMessage =
+            parseError instanceof Error ? parseError.message : "Unknown image response parse error.";
+
+          console.warn(
+            `[ImageGen] Failed to parse JSON response for ${model}, retrying with SSE Accept header: ${parseMessage}`
+          );
+
+          response = await executeRequest(payload, "text/event-stream");
+          console.log(`[ImageGen] Model ${model} SSE retry response status: ${response.status}`);
+
+          if (!response.ok) {
+            const retryErrorText = await response.text();
+            throw new Error(`Image generation failed after SSE retry: ${response.status} ${retryErrorText}`);
+          }
+
+          clearTimeout(timeoutId);
+          const result = await parseImageGenerationResponse(response);
+          console.log(`[ImageGen] Success with ${model} after SSE retry, got ${result?.data?.length || 0} images`);
+          return {
+            ...result,
+            _meta: {
+              model,
+              fallbackUsed: model !== requestedModel,
+            },
+          };
+        }
       }
 
       const errorText = await response.text();

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { ChatMessage } from "@/types";
+import type { ChatMessage, ReferenceImage } from "@/types";
 
 type MessageRow = {
   id: string;
@@ -11,11 +11,7 @@ type MessageRow = {
   model: string | null;
   image_url?: string | null;
   reference_images?:
-    | {
-        dataUrl: string;
-        mimeType: string;
-        name: string;
-      }[]
+    | ReferenceImage[]
     | null;
   created_at: string;
   images?: {

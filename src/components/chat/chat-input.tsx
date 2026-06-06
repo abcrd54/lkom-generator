@@ -5,51 +5,30 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import Image from "next/image";
 import { Send, ImageIcon, Loader2, X, ImagePlus } from "lucide-react";
-import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage } from "@/types";
+import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage, ReferenceImage } from "@/types";
 import { toast } from "sonner";
 
 const MAX_REFERENCE_IMAGES = 3;
 const MAX_REFERENCE_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_REFERENCE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-async function fileToReferencePayload(file: File) {
-  const objectUrl = URL.createObjectURL(file);
-
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new window.Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error("Failed to load reference image"));
-      img.src = objectUrl;
-    });
-
-    const maxDimension = 1024;
-    const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
-    const width = Math.max(1, Math.round(image.width * scale));
-    const height = Math.max(1, Math.round(image.height * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-
-    const context = canvas.getContext("2d");
-    if (!context) {
-      throw new Error("Canvas is unavailable");
-    }
-
-    context.drawImage(image, 0, 0, width, height);
-    const mimeType = file.type === "image/png" ? "image/png" : "image/jpeg";
-    const quality = mimeType === "image/png" ? undefined : 0.86;
-    const dataUrl = canvas.toDataURL(mimeType, quality);
-
-    return {
-      dataUrl,
-      mimeType,
-      name: file.name,
-    };
-  } finally {
-    URL.revokeObjectURL(objectUrl);
+async function uploadReferenceFiles(files: File[]) {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
   }
+
+  const response = await fetch("/api/images/reference-upload", {
+    method: "POST",
+    body: formData,
+  });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "Gagal upload gambar referensi");
+  }
+
+  return data.files as Array<{ name: string; mimeType: string; url: string }>;
 }
 
 interface ChatInputProps {
@@ -63,16 +42,10 @@ interface ChatInputProps {
     colorTheme: string;
     language: ImageLanguage;
     watermark?: string;
-    referenceImage?: {
-      dataUrl: string;
-      mimeType: string;
-      name: string;
-    };
-    referenceImages?: {
-      dataUrl: string;
-      mimeType: string;
-      name: string;
-    }[];
+    referenceImage?: ReferenceImage;
+    referenceImageUrl?: string;
+    referenceImageUrls?: string[];
+    referenceImages?: ReferenceImage[];
   }) => void;
   loading: boolean;
   imageQuota: { remaining: number; limit?: number; resetAt: string } | null;
@@ -91,11 +64,8 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
     language: "id" as ImageLanguage,
     watermark: "",
   };
-  const [referenceImages, setReferenceImages] = useState<{
-    dataUrl: string;
-    mimeType: string;
-    name: string;
-  }[]>([]);
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
+  const [uploadingReferences, setUploadingReferences] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
 
@@ -107,7 +77,7 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
   }, [message]);
 
   const handleSubmit = () => {
-    if (!message.trim() || loading) return;
+    if (!message.trim() || loading || uploadingReferences) return;
 
     if (mode === "text") {
       onSendMessage(message.trim());
@@ -115,7 +85,15 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
       onGenerateImage({
         prompt: message.trim(),
         ...imageOptions,
+        referenceImageUrls: referenceImages
+          .map((image) => image.url)
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
         referenceImages: referenceImages.length ? referenceImages : undefined,
+      });
+      referenceImages.forEach((image) => {
+        if (image.previewUrl) {
+          URL.revokeObjectURL(image.previewUrl);
+        }
       });
       setReferenceImages([]);
     }
@@ -156,10 +134,19 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
     if (!filesToAdd.length) return;
 
     try {
-      const payloads = await Promise.all(filesToAdd.map(fileToReferencePayload));
+      setUploadingReferences(true);
+      const uploadedFiles = await uploadReferenceFiles(filesToAdd);
+      const payloads = filesToAdd.map((file, index) => ({
+        name: file.name,
+        mimeType: file.type,
+        previewUrl: URL.createObjectURL(file),
+        url: uploadedFiles[index]?.url || "",
+      }));
       setReferenceImages((prev) => [...prev, ...payloads].slice(0, MAX_REFERENCE_IMAGES));
     } catch {
       toast.error("Gagal memuat gambar referensi");
+    } finally {
+      setUploadingReferences(false);
     }
   };
 
@@ -219,7 +206,7 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
               <button
                 type="button"
                 onClick={() => referenceInputRef.current?.click()}
-                disabled={referenceImages.length >= MAX_REFERENCE_IMAGES || loading || disabled}
+                disabled={referenceImages.length >= MAX_REFERENCE_IMAGES || loading || disabled || uploadingReferences}
                 className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Tambah gambar referensi"
               >
@@ -229,6 +216,11 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
               <span className="text-[11px] text-slate-400">
                 JPG, PNG, WEBP. Maks {MAX_REFERENCE_IMAGES} gambar, 5 MB/file.
               </span>
+              {uploadingReferences && (
+                <span className="text-[11px] font-medium text-blue-600">
+                  Uploading...
+                </span>
+              )}
             </div>
 
             {referenceImages.length > 0 && (
@@ -240,7 +232,7 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
                   >
                     <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-slate-200 bg-white">
                       <Image
-                        src={referenceImage.dataUrl}
+                        src={referenceImage.previewUrl || referenceImage.url || ""}
                         alt={referenceImage.name}
                         fill
                         unoptimized
@@ -258,7 +250,13 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
                     <button
                       type="button"
                       onClick={() =>
-                        setReferenceImages((prev) => prev.filter((_, imageIndex) => imageIndex !== index))
+                        setReferenceImages((prev) => {
+                          const target = prev[index];
+                          if (target?.previewUrl) {
+                            URL.revokeObjectURL(target.previewUrl);
+                          }
+                          return prev.filter((_, imageIndex) => imageIndex !== index);
+                        })
                       }
                       className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700"
                       title="Hapus gambar"
@@ -290,11 +288,11 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
           />
           <Button
             onClick={handleSubmit}
-            disabled={!message.trim() || loading || disabled}
+            disabled={!message.trim() || loading || disabled || uploadingReferences}
             className="shrink-0 bg-blue-600 hover:bg-blue-700 self-end h-11 w-11"
             size="icon"
           >
-            {loading ? (
+            {loading || uploadingReferences ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : mode === "image" ? (
               <ImageIcon className="h-4 w-4" />

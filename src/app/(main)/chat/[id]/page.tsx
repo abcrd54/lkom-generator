@@ -102,12 +102,16 @@ export default function ChatIdPage() {
       return;
     }
 
+    const persistedReferenceImages = options.referenceImages?.length
+      ? options.referenceImages.map(({ name, mimeType, url }) => ({ name, mimeType, url }))
+      : null;
+
     const supabase = createClient();
     await supabase.from("messages").insert({
       conversation_id: convId,
       role: "user",
       content: options.prompt.trim(),
-      reference_images: options.referenceImages?.length ? options.referenceImages : null,
+      reference_images: persistedReferenceImages,
     });
 
     setMessages((prev) => [

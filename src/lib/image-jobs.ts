@@ -1,5 +1,5 @@
 import { Queue, type JobsOptions, type QueueOptions } from "bullmq";
-import type { AgeGroup, AspectRatio, DetailLevel, ImageLanguage, ImageStyle } from "@/types";
+import type { AgeGroup, AspectRatio, DetailLevel, ImageLanguage, ImageStyle, ReferenceImage } from "@/types";
 
 export const IMAGE_QUEUE_NAME = "lkom-image-generation";
 
@@ -15,16 +15,10 @@ export interface ImageJobData {
   colorTheme: string;
   language: ImageLanguage;
   watermark?: string;
-  referenceImage?: {
-    dataUrl: string;
-    mimeType: string;
-    name: string;
-  };
-  referenceImages?: {
-    dataUrl: string;
-    mimeType: string;
-    name: string;
-  }[];
+  referenceImage?: ReferenceImage;
+  referenceImageUrl?: string;
+  referenceImages?: ReferenceImage[];
+  referenceImageUrls?: string[];
 }
 
 export interface ImageJobResult {

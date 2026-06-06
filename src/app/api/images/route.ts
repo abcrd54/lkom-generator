@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { checkImageRateLimit } from "@/lib/rate-limit";
 import { getImageQueue } from "@/lib/image-jobs";
-import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage } from "@/types";
+import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage, ReferenceImage } from "@/types";
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,7 +32,9 @@ export async function POST(request: NextRequest) {
       watermark,
       conversationId,
       referenceImage,
+      referenceImageUrl,
       referenceImages,
+      referenceImageUrls,
     } = body as {
       prompt: string;
       style: ImageStyle;
@@ -43,16 +45,10 @@ export async function POST(request: NextRequest) {
       language: ImageLanguage;
       watermark?: string;
       conversationId?: string;
-      referenceImage?: {
-        dataUrl: string;
-        mimeType: string;
-        name: string;
-      };
-      referenceImages?: {
-        dataUrl: string;
-        mimeType: string;
-        name: string;
-      }[];
+      referenceImage?: ReferenceImage;
+      referenceImageUrl?: string;
+      referenceImages?: ReferenceImage[];
+      referenceImageUrls?: string[];
     };
 
     if (!prompt) {
@@ -89,8 +85,15 @@ export async function POST(request: NextRequest) {
       : referenceImage
         ? [referenceImage]
         : [];
+    const normalizedReferenceImageUrls = Array.isArray(referenceImageUrls)
+      ? referenceImageUrls.filter(Boolean)
+      : referenceImageUrl
+        ? [referenceImageUrl]
+        : normalizedReferenceImages
+            .map((image) => image.url)
+            .filter((value): value is string => typeof value === "string" && value.length > 0);
 
-    if (normalizedReferenceImages.length > 3) {
+    if (Math.max(normalizedReferenceImages.length, normalizedReferenceImageUrls.length) > 3) {
       return NextResponse.json({ error: "Maksimal 3 gambar referensi" }, { status: 400 });
     }
 
@@ -103,11 +106,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Format gambar referensi harus JPG, PNG, atau WEBP" }, { status: 400 });
     }
 
-    if (normalizedReferenceImages.some((image) => image.dataUrl.length > 8_000_000)) {
+    if (
+      normalizedReferenceImages.some(
+        (image) => image.dataUrl && image.dataUrl.length > 8_000_000
+      )
+    ) {
       return NextResponse.json({ error: "Ukuran gambar referensi terlalu besar" }, { status: 400 });
     }
 
-    const finalPrompt = normalizedReferenceImages.length
+    const hasReferenceImages = normalizedReferenceImageUrls.length > 0 || normalizedReferenceImages.length > 0;
+    const finalPrompt = hasReferenceImages
       ? [
           prompt.trim(),
           "Use the attached reference image as the main visual reference.",
@@ -140,6 +148,10 @@ export async function POST(request: NextRequest) {
       colorTheme,
       language,
       watermark,
+      referenceImageUrl:
+        normalizedReferenceImageUrls.length === 1 ? normalizedReferenceImageUrls[0] : undefined,
+      referenceImageUrls:
+        normalizedReferenceImageUrls.length > 1 ? normalizedReferenceImageUrls : undefined,
       referenceImages: normalizedReferenceImages.length ? normalizedReferenceImages : undefined,
     });
 
