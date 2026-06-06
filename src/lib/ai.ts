@@ -7,6 +7,54 @@ function isCodexImageModel(model: string) {
   return model.startsWith("cx/") || model.startsWith("codex/");
 }
 
+function extractImageItem(value: unknown): { b64_json?: string; url?: string } | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  if ("b64_json" in value || "url" in value) {
+    const item = value as { b64_json?: string; url?: string };
+    if (typeof item.b64_json === "string" || typeof item.url === "string") {
+      return item;
+    }
+  }
+
+  if ("item" in value) {
+    const nested = extractImageItem((value as { item?: unknown }).item);
+    if (nested) return nested;
+  }
+
+  if ("result" in value && Array.isArray((value as { result?: unknown[] }).result)) {
+    for (const entry of (value as { result: unknown[] }).result) {
+      const nested = extractImageItem(entry);
+      if (nested) return nested;
+    }
+  }
+
+  if ("data" in value && Array.isArray((value as { data?: unknown[] }).data)) {
+    for (const entry of (value as { data: unknown[] }).data) {
+      const nested = extractImageItem(entry);
+      if (nested) return nested;
+    }
+  }
+
+  if ("output" in value && Array.isArray((value as { output?: unknown[] }).output)) {
+    for (const entry of (value as { output: unknown[] }).output) {
+      const nested = extractImageItem(entry);
+      if (nested) return nested;
+    }
+  }
+
+  if ("content" in value && Array.isArray((value as { content?: unknown[] }).content)) {
+    for (const entry of (value as { content: unknown[] }).content) {
+      const nested = extractImageItem(entry);
+      if (nested) return nested;
+    }
+  }
+
+  return null;
+}
+
 function normalize9RouterBaseURL(rawValue?: string) {
   const fallback = "http://localhost:20128";
   const value = rawValue?.trim();
@@ -65,6 +113,11 @@ export async function streamChat(params: {
 }
 
 function parseSsePayload(body: string) {
+  const trimmedBody = body.trim();
+  if (!trimmedBody) {
+    throw new Error("Image generation returned an empty SSE payload.");
+  }
+
   const events = body
     .split(/\r?\n\r?\n/)
     .map((chunk) => chunk.trim())
@@ -72,6 +125,14 @@ function parseSsePayload(body: string) {
 
   let lastJsonText: string | null = null;
   let partialImageBase64: string | null = null;
+  const bodyPreview = trimmedBody.slice(0, 500);
+
+  const rawCandidates = trimmedBody
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.startsWith("data:") ? line.slice(5).trim() : line)
+    .filter((line) => line && line !== "[DONE]" && !line.startsWith("event:"));
 
   for (const eventChunk of events) {
     const lines = eventChunk.split(/\r?\n/);
@@ -93,6 +154,13 @@ function parseSsePayload(body: string) {
 
     try {
       const parsed = JSON.parse(joined);
+      const imageItem = extractImageItem(parsed);
+
+      if (imageItem) {
+        console.log(`[ImageGen] SSE parser using ${eventName || "json"} image payload`);
+        return { data: [imageItem] };
+      }
+
       if (Array.isArray(parsed?.data) && parsed.data.length > 0) {
         lastJsonText = joined;
       }
@@ -101,22 +169,34 @@ function parseSsePayload(body: string) {
         partialImageBase64 = parsed.b64_json;
       }
 
-      if (eventName === "response.output_item.done" && Array.isArray(parsed?.item?.result)) {
-        const imageItem = parsed.item.result.find(
-          (item: unknown) =>
-            item &&
-            typeof item === "object" &&
-            ("b64_json" in item || "url" in item)
-        ) as { b64_json?: string; url?: string } | undefined;
-
-        if (imageItem) {
-          console.log("[ImageGen] SSE parser using response.output_item.done result");
-          return { data: [imageItem] };
-        }
-      }
     } catch {
       // Ignore non-JSON event payloads and keep scanning for the final image event.
     }
+  }
+
+  for (const candidate of rawCandidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const imageItem = extractImageItem(parsed);
+      if (imageItem) {
+        console.log("[ImageGen] SSE parser using raw candidate payload");
+        return { data: [imageItem] };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const urlMatch = trimmedBody.match(/https?:\/\/[^\s"]+/i);
+  if (urlMatch) {
+    console.log("[ImageGen] SSE parser using URL regex fallback");
+    return { data: [{ url: urlMatch[0] }] };
+  }
+
+  const b64Match = trimmedBody.match(/"b64_json"\s*:\s*"([^"]+)"/);
+  if (b64Match) {
+    console.log("[ImageGen] SSE parser using b64_json regex fallback");
+    return { data: [{ b64_json: b64Match[1] }] };
   }
 
   if (partialImageBase64) {
@@ -127,6 +207,7 @@ function parseSsePayload(body: string) {
   }
 
   if (!lastJsonText) {
+    console.warn("[ImageGen] SSE parser preview:", bodyPreview);
     throw new Error("Image generation returned an empty SSE payload.");
   }
 
@@ -218,7 +299,7 @@ export async function generateImage(params: {
     let lastError: Error | null = null;
 
     for (const model of candidateModels) {
-      const useSseFirst = isCodexImageModel(model);
+      const supportsSseFallback = isCodexImageModel(model);
       const basePayload = {
         model,
         prompt: params.prompt,
@@ -245,7 +326,7 @@ export async function generateImage(params: {
               ? "url"
               : "dataurl"
             : "none"
-        }, transport=${useSseFirst ? "sse" : "json"}`
+        }, transport=${supportsSseFallback ? "json+sse-fallback" : "json"}`
       );
 
       const payload = referenceImages.length
@@ -267,7 +348,7 @@ export async function generateImage(params: {
       const hasReferencePayload = referenceImages.length > 0;
       let attemptedWithoutReference = !hasReferencePayload;
 
-      let response = await executeRequest(payload, useSseFirst ? "text/event-stream" : "application/json");
+      let response = await executeRequest(payload, "application/json");
 
       if (!response.ok && referenceImages.length > 1 && response.status === 400) {
         const errorText = await response.text();
@@ -275,14 +356,14 @@ export async function generateImage(params: {
         response = await executeRequest({
           ...basePayload,
           image: referenceImages[0],
-        }, useSseFirst ? "text/event-stream" : "application/json");
+        }, "application/json");
       }
 
       if (!response.ok && hasReferencePayload && response.status === 400) {
         const errorText = await response.text();
         console.warn(`[ImageGen] ${model} rejected reference image, retrying without image:`, errorText);
         attemptedWithoutReference = true;
-        response = await executeRequest(noReferencePayload, useSseFirst ? "text/event-stream" : "application/json");
+        response = await executeRequest(noReferencePayload, "application/json");
       }
 
       if (!response.ok && hasReferencePayload && !attemptedWithoutReference) {
@@ -294,7 +375,7 @@ export async function generateImage(params: {
             errorText
           );
           attemptedWithoutReference = true;
-          response = await executeRequest(noReferencePayload, useSseFirst ? "text/event-stream" : "application/json");
+          response = await executeRequest(noReferencePayload, "application/json");
         } else {
           response = new Response(errorText, {
             status: response.status,
@@ -319,8 +400,8 @@ export async function generateImage(params: {
             },
           };
         } catch (parseError) {
-          if (useSseFirst) {
-            throw parseError instanceof Error ? parseError : new Error("Failed to parse SSE image response.");
+          if (!supportsSseFallback) {
+            throw parseError instanceof Error ? parseError : new Error("Failed to parse image response.");
           }
 
           const parseMessage =
