@@ -46,6 +46,7 @@ export default function ChatPage() {
       const { data } = await supabase
         .from("conversations")
         .select("id")
+        .eq("user_id", user.id)
         .order("last_message_at", { ascending: false })
         .limit(1)
         .maybeSingle();

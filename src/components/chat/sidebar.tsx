@@ -60,9 +60,26 @@ export function Sidebar({
 
   const fetchConversations = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setConversations([]);
+        return;
+      }
+
+      let query = supabase
         .from("conversations")
-        .select("*")
+        .select("*");
+
+      // The chat UI should only operate on the signed-in user's conversations.
+      // Admin-wide access remains available through dedicated admin pages/routes.
+      if (!isAdminPage) {
+        query = query.eq("user_id", user.id);
+      }
+
+      const { data, error } = await query
         .order("last_message_at", { ascending: false });
 
       if (!error && data) {
@@ -72,7 +89,7 @@ export function Sidebar({
       // ignore
     }
     setLoading(false);
-  }, [supabase]);
+  }, [isAdminPage, supabase]);
 
   const fetchProfile = useCallback(async () => {
     const {
