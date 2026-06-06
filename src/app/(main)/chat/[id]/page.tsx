@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Sidebar, MobileSidebar } from "@/components/chat/sidebar";
 import { ChatArea } from "@/components/chat/chat-area";
@@ -18,6 +18,7 @@ export default function ChatIdPage() {
   const params = useParams();
   const router = useRouter();
   const conversationId = params?.id as string;
+  const [conversationReady, setConversationReady] = useState(false);
 
   const { messages, loading: chatLoading, streamingContent, loadMessages, sendMessage, setMessages } = useChat();
   const { loading: imageLoading, quota, generateImage, fetchQuota } = useImageGen();
@@ -26,11 +27,43 @@ export default function ChatIdPage() {
   const currentConversationId = conversationId || null;
 
   useEffect(() => {
-    if (conversationId) {
+    const validateConversation = async () => {
+      if (!conversationId) {
+        setConversationReady(false);
+        return;
+      }
+
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+
+      const { data } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("id", conversationId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!data) {
+        setMessages([]);
+        toast.error("Percakapan tidak ditemukan");
+        router.replace("/chat");
+        return;
+      }
+
+      setConversationReady(true);
       loadMessages(conversationId);
-    }
+    };
+
+    validateConversation();
     fetchQuota();
-  }, [conversationId, loadMessages, fetchQuota]);
+  }, [conversationId, fetchQuota, loadMessages, router, setMessages]);
 
   const handleNewChat = useCallback(async () => {
     setMessages([]);
@@ -43,14 +76,14 @@ export default function ChatIdPage() {
   }, [router, loadMessages]);
 
   const ensureConversation = useCallback(async (): Promise<string | null> => {
-    if (currentConversationId) return currentConversationId;
+    if (currentConversationId && conversationReady) return currentConversationId;
     const newId = await createConversation();
     if (newId) {
       refresh();
       router.push(`/chat/${newId}`);
     }
     return newId;
-  }, [currentConversationId, createConversation, refresh, router]);
+  }, [conversationReady, currentConversationId, createConversation, refresh, router]);
 
   const handleSendMessage = useCallback(async (content: string) => {
     const convId = await ensureConversation();
