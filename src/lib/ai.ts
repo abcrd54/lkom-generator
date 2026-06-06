@@ -218,6 +218,7 @@ export async function generateImage(params: {
     let lastError: Error | null = null;
 
     for (const model of candidateModels) {
+      const useSseFirst = isCodexImageModel(model);
       const basePayload = {
         model,
         prompt: params.prompt,
@@ -238,7 +239,13 @@ export async function generateImage(params: {
           basePayload.quality
         )}, background=${String(basePayload.background)}, image_detail=${String(
           basePayload.image_detail
-        )}, output_format=${String(basePayload.output_format)}, references=${referenceImages.length}`
+        )}, output_format=${String(basePayload.output_format)}, references=${referenceImages.length}, reference_source=${
+          referenceImages.length
+            ? referenceImages.every((image) => typeof image === "string" && /^https?:\/\//i.test(image))
+              ? "url"
+              : "dataurl"
+            : "none"
+        }, transport=${useSseFirst ? "sse" : "json"}`
       );
 
       const payload = referenceImages.length
@@ -260,7 +267,7 @@ export async function generateImage(params: {
       const hasReferencePayload = referenceImages.length > 0;
       let attemptedWithoutReference = !hasReferencePayload;
 
-      let response = await executeRequest(payload, "application/json");
+      let response = await executeRequest(payload, useSseFirst ? "text/event-stream" : "application/json");
 
       if (!response.ok && referenceImages.length > 1 && response.status === 400) {
         const errorText = await response.text();
@@ -268,14 +275,14 @@ export async function generateImage(params: {
         response = await executeRequest({
           ...basePayload,
           image: referenceImages[0],
-        });
+        }, useSseFirst ? "text/event-stream" : "application/json");
       }
 
       if (!response.ok && hasReferencePayload && response.status === 400) {
         const errorText = await response.text();
         console.warn(`[ImageGen] ${model} rejected reference image, retrying without image:`, errorText);
         attemptedWithoutReference = true;
-        response = await executeRequest(noReferencePayload);
+        response = await executeRequest(noReferencePayload, useSseFirst ? "text/event-stream" : "application/json");
       }
 
       if (!response.ok && hasReferencePayload && !attemptedWithoutReference) {
@@ -287,7 +294,7 @@ export async function generateImage(params: {
             errorText
           );
           attemptedWithoutReference = true;
-          response = await executeRequest(noReferencePayload);
+          response = await executeRequest(noReferencePayload, useSseFirst ? "text/event-stream" : "application/json");
         } else {
           response = new Response(errorText, {
             status: response.status,
@@ -312,6 +319,10 @@ export async function generateImage(params: {
             },
           };
         } catch (parseError) {
+          if (useSseFirst) {
+            throw parseError instanceof Error ? parseError : new Error("Failed to parse SSE image response.");
+          }
+
           const parseMessage =
             parseError instanceof Error ? parseError.message : "Unknown image response parse error.";
 
