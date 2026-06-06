@@ -317,7 +317,7 @@ export async function generateImage(params: {
         prompt: params.prompt,
         n: 1,
         size: params.size || "auto",
-        quality: params.quality || "auto",
+        quality: params.quality || "medium",
         background: params.background || "auto",
         image_detail: params.image_detail || "high",
         output_format: params.output_format || "png",

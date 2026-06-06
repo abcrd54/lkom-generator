@@ -70,7 +70,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
     fallbackPromptWithoutReferences: data.originalPrompt,
     model: PRIMARY_IMAGE_MODEL,
     size: "auto",
-    quality: "auto",
+    quality: "medium",
     background: "auto",
     image_detail: "high",
     output_format: "png",
