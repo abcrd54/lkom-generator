@@ -3,6 +3,10 @@ import OpenAI from "openai";
 const DEFAULT_IMAGE_MODEL = "cx/gpt-5.5-image";
 const FALLBACK_IMAGE_MODELS = [DEFAULT_IMAGE_MODEL, "cx/gpt-5.4-image"];
 
+function isCodexImageModel(model: string) {
+  return model.startsWith("cx/") || model.startsWith("codex/");
+}
+
 function normalize9RouterBaseURL(rawValue?: string) {
   const fallback = "http://localhost:20128";
   const value = rawValue?.trim();
@@ -238,10 +242,20 @@ export async function generateImage(params: {
       );
 
       const payload = referenceImages.length
-        ? {
-            ...basePayload,
-            image: referenceImages.length === 1 ? referenceImages[0] : referenceImages,
-          }
+        ? referenceImages.length === 1
+          ? {
+              ...basePayload,
+              image: referenceImages[0],
+            }
+          : isCodexImageModel(model)
+            ? {
+                ...basePayload,
+                images: referenceImages,
+              }
+            : {
+                ...basePayload,
+                image: referenceImages,
+              }
         : basePayload;
       const hasReferencePayload = referenceImages.length > 0;
       let attemptedWithoutReference = !hasReferencePayload;
