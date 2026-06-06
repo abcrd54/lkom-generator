@@ -12,6 +12,58 @@ const MAX_REFERENCE_IMAGES = 3;
 const MAX_REFERENCE_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_REFERENCE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+async function normalizeReferenceFile(file: File) {
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Failed to load reference image"));
+      img.src = objectUrl;
+    });
+
+    const maxDimension = 1024;
+    const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Canvas is unavailable");
+    }
+
+    context.drawImage(image, 0, 0, width, height);
+    const mimeType = file.type === "image/png" ? "image/png" : "image/jpeg";
+    const quality = mimeType === "image/png" ? undefined : 0.9;
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((result) => {
+        if (result) resolve(result);
+        else reject(new Error("Failed to encode normalized reference image"));
+      }, mimeType, quality);
+    });
+
+    const extension = mimeType === "image/png" ? "png" : "jpg";
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+    const normalizedFile = new File([blob], `${baseName}.${extension}`, { type: mimeType });
+    const previewUrl = URL.createObjectURL(blob);
+
+    return {
+      file: normalizedFile,
+      previewUrl,
+      mimeType,
+      name: normalizedFile.name,
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 async function uploadReferenceFiles(files: File[]) {
   const formData = new FormData();
   for (const file of files) {
@@ -135,11 +187,12 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
 
     try {
       setUploadingReferences(true);
-      const uploadedFiles = await uploadReferenceFiles(filesToAdd);
-      const payloads = filesToAdd.map((file, index) => ({
-        name: file.name,
-        mimeType: file.type,
-        previewUrl: URL.createObjectURL(file),
+      const normalizedFiles = await Promise.all(filesToAdd.map(normalizeReferenceFile));
+      const uploadedFiles = await uploadReferenceFiles(normalizedFiles.map((item) => item.file));
+      const payloads = normalizedFiles.map((item, index) => ({
+        name: item.name,
+        mimeType: item.mimeType,
+        previewUrl: item.previewUrl,
         url: uploadedFiles[index]?.url || "",
       }));
       setReferenceImages((prev) => [...prev, ...payloads].slice(0, MAX_REFERENCE_IMAGES));
