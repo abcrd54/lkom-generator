@@ -6,7 +6,7 @@ import type { ImageGenerateRequest, ImageQuota, ChatMessage } from "@/types";
 import { toast } from "sonner";
 
 const IMAGE_JOB_POLL_INTERVAL = 2000;
-const IMAGE_JOB_TIMEOUT = 240000;
+const IMAGE_JOB_TIMEOUT = 600000;
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

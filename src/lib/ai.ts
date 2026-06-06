@@ -248,9 +248,20 @@ export async function generateImage(params: {
       ...((requestedModel === DEFAULT_IMAGE_MODEL && FALLBACK_IMAGE_MODELS.slice(1)) || []),
     ])
   );
+  const hasReferenceInput = Boolean(
+    params.referenceImageUrl ||
+    params.referenceImageUrls?.length ||
+    params.referenceImageDataUrl ||
+    params.referenceImageDataUrls?.length
+  );
+  const defaultTimeoutMs = hasReferenceInput ? 420000 : 240000;
+  const requestTimeoutMs = Number.parseInt(
+    process.env.IMAGE_GENERATION_TIMEOUT_MS || String(defaultTimeoutMs),
+    10
+  );
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 180000); // 180 detik timeout
+  const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
 
   const executeRequest = async (
     payload: Record<string, unknown>,
@@ -284,6 +295,7 @@ export async function generateImage(params: {
     console.log(`[ImageGen] Starting request to ${baseURL}/images/generations`);
     console.log(`[ImageGen] Requested model: ${requestedModel}, Size: ${params.size}`);
     console.log(`[ImageGen] API key prefix: ${apiKey.slice(0, 12)}`);
+    console.log(`[ImageGen] Request timeout: ${requestTimeoutMs}ms`);
 
     const referenceImages =
       params.referenceImageUrl
@@ -449,7 +461,7 @@ export async function generateImage(params: {
     clearTimeout(timeoutId);
     console.error(`[ImageGen] Error:`, error);
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Image generation timeout (>180 detik)");
+      throw new Error(`Image generation timeout (>${Math.round(requestTimeoutMs / 1000)} detik)`);
     }
     throw error;
   }

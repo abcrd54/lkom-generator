@@ -3,6 +3,7 @@ import { IMAGE_QUEUE_NAME, getRedisConnection, type ImageJobData, type ImageJobR
 import { processImageJob } from "@/lib/image-processor";
 
 const concurrency = Number.parseInt(process.env.IMAGE_WORKER_CONCURRENCY || "5", 10);
+const lockDuration = Number.parseInt(process.env.IMAGE_WORKER_LOCK_DURATION_MS || "600000", 10);
 
 const worker = new Worker<ImageJobData, ImageJobResult>(
   IMAGE_QUEUE_NAME,
@@ -15,7 +16,7 @@ const worker = new Worker<ImageJobData, ImageJobResult>(
   {
     connection: getRedisConnection(),
     concurrency: Number.isFinite(concurrency) ? concurrency : 5,
-    lockDuration: 240000,
+    lockDuration: Number.isFinite(lockDuration) ? lockDuration : 600000,
   }
 );
 
