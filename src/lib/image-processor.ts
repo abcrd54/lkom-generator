@@ -4,12 +4,12 @@ import { uploadToR2 } from "@/lib/r2";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { ImageJobData, ImageJobResult } from "@/lib/image-jobs";
 
-const IMAGE_MODEL = "cx/gpt-5.5-image";
+const PRIMARY_IMAGE_MODEL = "cx/gpt-5.5-image";
 
 export async function processImageJob(data: ImageJobData): Promise<ImageJobResult> {
   const response = await generateImage({
     prompt: data.finalPrompt,
-    model: IMAGE_MODEL,
+    model: PRIMARY_IMAGE_MODEL,
     size: "auto",
     quality: "medium",
     background: "auto",
@@ -21,6 +21,10 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
         ? [data.referenceImage.dataUrl]
         : undefined,
   });
+  const usedModel =
+    typeof response?._meta?.model === "string" && response._meta.model
+      ? response._meta.model
+      : PRIMARY_IMAGE_MODEL;
 
   const imageData = response?.data?.[0];
   if (!imageData) {
@@ -61,7 +65,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
       conversation_id: data.conversationId,
       role: "assistant",
       content: "",
-      model: IMAGE_MODEL,
+      model: usedModel,
     })
     .select("id, created_at")
     .single();
@@ -84,7 +88,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
       color_theme: data.colorTheme,
       language: data.language,
       watermark: data.watermark || null,
-      model: IMAGE_MODEL,
+      model: usedModel,
       expires_at: expiresAt.toISOString(),
     })
     .select("id")
@@ -98,6 +102,7 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
     imageUrl,
     imageId: savedImage.id,
     messageId: savedMessage.id,
+    model: usedModel,
     prompt: data.originalPrompt,
     metadata: {
       style: data.style,

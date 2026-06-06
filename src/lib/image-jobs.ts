@@ -31,6 +31,7 @@ export interface ImageJobResult {
   imageUrl: string;
   imageId: string;
   messageId: string;
+  model: string;
   prompt: string;
   metadata: {
     style: ImageStyle;

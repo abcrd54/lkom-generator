@@ -61,7 +61,7 @@ export function useImageGen() {
       toast.info("Gambar masuk antrean");
 
       const startedAt = Date.now();
-      let result: { messageId: string; imageUrl: string } | null = null;
+      let result: { messageId: string; imageUrl: string; model?: string } | null = null;
 
       while (Date.now() - startedAt < IMAGE_JOB_TIMEOUT) {
         await wait(IMAGE_JOB_POLL_INTERVAL);
@@ -105,7 +105,7 @@ export function useImageGen() {
           id: savedMsg.id,
           role: "assistant",
           content: "",
-          model: "cx/gpt-5.5-image",
+          model: savedMsg.model || result.model || "cx/gpt-5.5-image",
           imageUrl: savedMsg.image_url || result.imageUrl,
           createdAt: savedMsg.created_at,
         };
