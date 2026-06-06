@@ -128,6 +128,16 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
     }
   }, [message]);
 
+  useEffect(() => {
+    return () => {
+      referenceImages.forEach((image) => {
+        if (image.previewUrl) {
+          URL.revokeObjectURL(image.previewUrl);
+        }
+      });
+    };
+  }, [referenceImages]);
+
   const handleSubmit = () => {
     if (!message.trim() || loading || uploadingReferences) return;
 
@@ -141,11 +151,6 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
           .map((image) => image.url)
           .filter((value): value is string => typeof value === "string" && value.length > 0),
         referenceImages: referenceImages.length ? referenceImages : undefined,
-      });
-      referenceImages.forEach((image) => {
-        if (image.previewUrl) {
-          URL.revokeObjectURL(image.previewUrl);
-        }
       });
       setReferenceImages([]);
     }
