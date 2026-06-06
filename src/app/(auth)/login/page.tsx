@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import Link from "next/link";
 import { GraduationCap, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
@@ -90,10 +89,7 @@ export default function LoginPage() {
           </Button>
         </form>
         <div className="mt-4 text-center text-sm text-muted-foreground">
-          Belum punya akun?{" "}
-          <Link href="/register" className="text-blue-600 hover:underline">
-            Daftar
-          </Link>
+          Akun dibuat oleh admin. Hubungi admin jika Anda belum memiliki akses.
         </div>
       </CardContent>
     </Card>

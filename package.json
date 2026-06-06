@@ -8,6 +8,7 @@
     "start": "next start",
     "worker:images": "tsx src/workers/image-worker.ts",
     "cleanup:expired-images": "node scripts/cleanup-expired-images.mjs",
+    "supabase:bulk-create-users": "node scripts/bulk-create-users.mjs",
     "lint": "eslint"
   },
   "dependencies": {
