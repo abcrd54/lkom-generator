@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import http from "node:http";
 
 const DEFAULT_IMAGE_MODEL = "cx/gpt-5.5-image";
 const FALLBACK_IMAGE_MODELS = [DEFAULT_IMAGE_MODEL, "cx/gpt-5.4-image"];
@@ -321,9 +322,50 @@ export async function generateImage(params: {
     ? `${baseURL}/images/generations?response_format=binary`
     : `${baseURL}/images/generations`;
 
+  function executeCodexBinaryRequest(payload: Record<string, unknown>): Promise<Response> {
+    return new Promise((resolve, reject) => {
+      const body = JSON.stringify(payload);
+      const url = new URL(imagesEndpoint);
+      const req = http.request({
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname + url.search,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Length": Buffer.byteLength(body),
+        },
+      }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          const total = Buffer.concat(chunks);
+          const headers = new Headers();
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (value) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+          }
+          resolve(new Response(total, {
+            status: res.statusCode || 200,
+            statusText: res.statusMessage || "OK",
+            headers,
+          }));
+        });
+        res.on("error", reject);
+      });
+      req.on("error", reject);
+      req.setTimeout(90000, () => { req.destroy(); reject(new Error("Request timeout 90s")); });
+      req.write(body);
+      req.end();
+    });
+  }
+
   const executeRequest = async (
     payload: Record<string, unknown>,
   ) => {
+    if (useCodexBinary) {
+      return executeCodexBinaryRequest(payload);
+    }
     const perRequestTimeout = 90000;
     const perController = new AbortController();
     const perTimer = setTimeout(() => perController.abort(), perRequestTimeout);
@@ -375,7 +417,7 @@ export async function generateImage(params: {
         prompt: params.prompt,
         n: 1,
         size: params.size || "auto",
-        quality: params.quality || "medium",
+        quality: params.quality || "auto",
         background: params.background || "auto",
         image_detail: params.image_detail || "high",
         output_format: params.output_format || "png",
