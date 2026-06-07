@@ -61,6 +61,29 @@ async function uploadReferenceImages(data: ImageJobData) {
 }
 
 export async function processImageJob(data: ImageJobData): Promise<ImageJobResult> {
+  try {
+    return await doProcessImageJob(data);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Terjadi kesalahan yang tidak diketahui.";
+    console.error(`[ImageProcessor] Job failed for user ${data.userId}:`, errorMessage);
+
+    try {
+      const supabase = createServiceClient();
+      await supabase.from("messages").insert({
+        conversation_id: data.conversationId,
+        role: "assistant",
+        content: `Maaf, gambar gagal dibuat. ${errorMessage.includes("timeout") ? "Server sedang sibuk, silakan coba lagi." : "Silakan coba lagi nanti."}`,
+        model: "error",
+      });
+    } catch (saveError) {
+      console.error("[ImageProcessor] Failed to save error message:", saveError);
+    }
+
+    throw error;
+  }
+}
+
+async function doProcessImageJob(data: ImageJobData): Promise<ImageJobResult> {
   const referenceImageUrls = await uploadReferenceImages(data);
   const referenceImageUrl =
     referenceImageUrls?.length === 1 ? referenceImageUrls[0] : undefined;

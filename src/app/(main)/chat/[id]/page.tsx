@@ -53,8 +53,29 @@ export default function ChatIdPage() {
         } else if (data.status === "failed") {
           stopPolling();
           setPendingImageJob(false);
-          toast.error(data.error || "Gagal generate gambar");
+
           await loadMessages(convId);
+
+          const supabase = createClient();
+          const { data: recentMsgs } = await supabase
+            .from("messages")
+            .select("id, model")
+            .eq("conversation_id", convId)
+            .eq("role", "assistant")
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          if (!recentMsgs?.length || recentMsgs[0].model !== "error") {
+            await supabase.from("messages").insert({
+              conversation_id: convId,
+              role: "assistant",
+              content: "Maaf, gambar gagal dibuat. Silakan coba lagi nanti.",
+              model: "error",
+            });
+            await loadMessages(convId);
+          }
+
+          refresh();
         }
       } catch {
         // ignore polling errors

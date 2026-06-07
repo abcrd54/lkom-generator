@@ -1,7 +1,7 @@
 "use client";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User, GraduationCap, Copy, Check } from "lucide-react";
+import { User, GraduationCap, Copy, Check, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { ImageCard } from "./image-card";
 import Image from "next/image";
@@ -22,6 +22,7 @@ export function ChatBubble({
 }: ChatBubbleProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
+  const isError = message.model === "error";
 
   const handleCopy = async () => {
     if (message.content) {
@@ -83,11 +84,19 @@ export function ChatBubble({
           className={`group relative text-sm ${
             isUser
               ? "bg-blue-600 text-white rounded-2xl rounded-br-sm px-4 py-3"
-              : "bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-bl-sm shadow-sm px-5 py-4 w-full"
+              : isError
+                ? "bg-red-50 border border-red-200 text-red-800 rounded-2xl rounded-bl-sm shadow-sm px-5 py-4 w-full"
+                : "bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-bl-sm shadow-sm px-5 py-4 w-full"
           }`}
         >
           {message.content && (
             <div className={isUser ? "text-white" : ""}>
+              {isError && (
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <span className="text-xs font-medium text-red-600">Gagal</span>
+                </div>
+              )}
               {isUser ? <p className="text-right">{message.content}</p> : renderContent(message.content)}
             </div>
           )}
