@@ -181,15 +181,81 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
-		log.Printf("[GoProxy] SUCCESS: %d bytes in %.1fs", len(bodyBytes), elapsed)
-		return ImageResponse{
-			Success: true,
-			B64JSON: base64Encode(bodyBytes),
-			Size:    len(bodyBytes),
+		if strings.Contains(ct, "image") || strings.Contains(ct, "octet-stream") {
+			log.Printf("[GoProxy] SUCCESS (binary): %d bytes in %.1fs", len(bodyBytes), elapsed)
+			return ImageResponse{
+				Success: true,
+				B64JSON: base64Encode(bodyBytes),
+				Size:    len(bodyBytes),
+			}
 		}
+
+		text := string(bodyBytes)
+		if strings.Contains(text, "b64_json") {
+			var jsonResp struct {
+				Data []struct {
+					B64JSON string `json:"b64_json"`
+				} `json:"data"`
+			}
+			if json.Unmarshal(bodyBytes, &jsonResp) == nil && len(jsonResp.Data) > 0 && jsonResp.Data[0].B64JSON != "" {
+				log.Printf("[GoProxy] SUCCESS (json): b64 len=%d", len(jsonResp.Data[0].B64JSON))
+				return ImageResponse{Success: true, B64JSON: jsonResp.Data[0].B64JSON, Size: len(bodyBytes)}
+			}
+		}
+
+		if strings.Contains(text, "event:") && strings.Contains(text, "data:") {
+			foundB64 := parseSSEText(text)
+			if foundB64 != "" {
+				log.Printf("[GoProxy] SUCCESS (sse): b64 len=%d", len(foundB64))
+				return ImageResponse{Success: true, B64JSON: foundB64, Size: len(bodyBytes)}
+			}
+		}
+
+		log.Printf("[GoProxy] No image found, body=%d bytes, ct=%s, preview: %s", len(bodyBytes), ct, string(bodyBytes[:min(200, len(bodyBytes))]))
 	}
 
 	return ImageResponse{Error: "All attempts failed"}
+}
+
+func parseSSEText(text string) string {
+	lines := strings.Split(text, "\n")
+	var currentData string
+	var foundB64 string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "data:") {
+			currentData += strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		} else if line == "" && currentData != "" {
+			if currentData != "[DONE]" {
+				var parsed map[string]interface{}
+				if json.Unmarshal([]byte(currentData), &parsed) == nil {
+					if b64, ok := parsed["b64_json"].(string); ok && len(b64) > 100 {
+						foundB64 = b64
+					}
+					if dataArr, ok := parsed["data"].([]interface{}); ok && len(dataArr) > 0 {
+						if item, ok := dataArr[0].(map[string]interface{}); ok {
+							if b64, ok := item["b64_json"].(string); ok && len(b64) > 100 {
+								foundB64 = b64
+							}
+						}
+					}
+				}
+			}
+			currentData = ""
+		}
+	}
+
+	if currentData != "" && currentData != "[DONE]" {
+		var parsed map[string]interface{}
+		if json.Unmarshal([]byte(currentData), &parsed) == nil {
+			if b64, ok := parsed["b64_json"].(string); ok && len(b64) > 100 {
+				foundB64 = b64
+			}
+		}
+	}
+
+	return foundB64
 }
 
 func base64Encode(data []byte) string {
