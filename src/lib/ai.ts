@@ -405,7 +405,9 @@ export async function generateImage(params: {
           : [];
 
     const resolvedImages = referenceImages.length
-      ? await ensureDataUrls(referenceImages)
+      ? useCodexBinary
+        ? referenceImages
+        : await ensureDataUrls(referenceImages)
       : [];
 
     let lastError: Error | null = null;

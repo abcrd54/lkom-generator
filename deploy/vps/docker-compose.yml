@@ -20,7 +20,7 @@ services:
       context: ./go-proxy
     environment:
       PORT: "20129"
-      NINEROUTER_URL: "http://host.docker.internal:20128"
+      NINEROUTER_URL: "http://172.17.0.1:20128"
       NINEROUTER_API_KEY: ${NINEROUTER_API_KEY}
     ports:
       - "20129:20129"

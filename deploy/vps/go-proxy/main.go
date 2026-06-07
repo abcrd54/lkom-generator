@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -37,7 +38,7 @@ func main() {
 	}
 	apiURL := os.Getenv("NINEROUTER_URL")
 	if apiURL == "" {
-		apiURL = "http://54.179.142.26:20128"
+		apiURL = "http://172.17.0.1:20128"
 	}
 	apiKey := os.Getenv("NINEROUTER_API_KEY")
 	if apiKey == "" {
@@ -59,6 +60,8 @@ func main() {
 		log.Printf("[GoProxy] Request: model=%s, prompt=%s, image=%d chars", req.Model, req.Prompt[:min(50, len(req.Prompt))], len(req.Image))
 
 		result := generateImage(apiURL, apiKey, req)
+
+		log.Printf("[GoProxy] Result: success=%v, size=%d, error=%s", result.Success, result.Size, result.Error)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
@@ -82,9 +85,11 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 			time.Sleep(delay)
 		}
 
-		client := &http.Client{Timeout: 90 * time.Second}
+		client := &http.Client{Timeout: 120 * time.Second}
 		body, _ := json.Marshal(req)
-		endpoint := fmt.Sprintf("%s/v1/images/generations?response_format=binary", apiURL)
+
+		endpoint := fmt.Sprintf("%s/v1/images/generations", apiURL)
+		log.Printf("[GoProxy] Attempt %d: POST %s, body=%d bytes", attempt, endpoint, len(body))
 
 		httpReq, err := http.NewRequest("POST", endpoint, stringReader(body))
 		if err != nil {
@@ -144,7 +149,36 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 			}
 		}
 
-		log.Printf("[GoProxy] Unknown response format: %s", string(bodyBytes[:min(200, len(bodyBytes))]))
+		text := string(bodyBytes)
+		if strings.Contains(text, "event:") && strings.Contains(text, "data:") {
+			lines := strings.Split(text, "\n")
+			for _, line := range lines {
+				if strings.HasPrefix(line, "data:") {
+					data := strings.TrimPrefix(line, "data:")
+					data = strings.TrimSpace(data)
+					if data == "[DONE]" || data == "" {
+						continue
+					}
+					var parsed map[string]interface{}
+					if json.Unmarshal([]byte(data), &parsed) == nil {
+						if b64, ok := parsed["b64_json"].(string); ok && len(b64) > 100 {
+							log.Printf("[GoProxy] SUCCESS (sse): b64 len=%d", len(b64))
+							return ImageResponse{Success: true, B64JSON: b64, Size: len(bodyBytes)}
+						}
+						if dataArr, ok := parsed["data"].([]interface{}); ok && len(dataArr) > 0 {
+							if item, ok := dataArr[0].(map[string]interface{}); ok {
+								if b64, ok := item["b64_json"].(string); ok && len(b64) > 100 {
+									log.Printf("[GoProxy] SUCCESS (sse data): b64 len=%d", len(b64))
+									return ImageResponse{Success: true, B64JSON: b64, Size: len(bodyBytes)}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		log.Printf("[GoProxy] Unknown format, preview: %s", string(bodyBytes[:min(300, len(bodyBytes))]))
 	}
 
 	return ImageResponse{Error: "All attempts failed"}
