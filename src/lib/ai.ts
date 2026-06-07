@@ -324,15 +324,25 @@ export async function generateImage(params: {
   const executeRequest = async (
     payload: Record<string, unknown>,
   ) => {
-    return fetch(imagesEndpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+    const perRequestTimeout = 90000;
+    const perController = new AbortController();
+    const perTimer = setTimeout(() => perController.abort(), perRequestTimeout);
+    try {
+      const res = await fetch(imagesEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        signal: perController.signal,
+      });
+      clearTimeout(perTimer);
+      return res;
+    } catch (err) {
+      clearTimeout(perTimer);
+      throw err;
+    }
   };
 
   try {
