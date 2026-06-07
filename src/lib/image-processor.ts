@@ -154,6 +154,13 @@ export async function processImageJob(data: ImageJobData): Promise<ImageJobResul
     throw new Error(imageError?.message || "Failed to save image metadata");
   }
 
+  await supabase.from("usage_logs").insert({
+    user_id: data.userId,
+    type: "image",
+    model: usedModel,
+    tokens: 0,
+  });
+
   return {
     imageUrl,
     imageId: savedImage.id,

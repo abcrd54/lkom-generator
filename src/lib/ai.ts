@@ -112,117 +112,170 @@ export async function streamChat(params: {
   return stream;
 }
 
-function parseSsePayload(body: string) {
-  const trimmedBody = body.trim();
-  if (!trimmedBody) {
-    throw new Error("Image generation returned an empty SSE payload.");
-  }
-
-  const events = body
-    .split(/\r?\n\r?\n/)
-    .map((chunk) => chunk.trim())
-    .filter(Boolean);
-
-  let lastJsonText: string | null = null;
-  let partialImageBase64: string | null = null;
-  const bodyPreview = trimmedBody.slice(0, 500);
-
-  const rawCandidates = trimmedBody
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.startsWith("data:") ? line.slice(5).trim() : line)
-    .filter((line) => line && line !== "[DONE]" && !line.startsWith("event:"));
-
-  for (const eventChunk of events) {
-    const lines = eventChunk.split(/\r?\n/);
-    const eventName =
-      lines.find((line) => line.startsWith("event:"))?.slice(6).trim() || "";
-    const dataLines = lines
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trim())
-      .filter(Boolean);
-
-    if (dataLines.length === 0) {
-      continue;
-    }
-
-    const joined = dataLines.join("\n");
-    if (joined === "[DONE]") {
-      continue;
-    }
-
-    try {
-      const parsed = JSON.parse(joined);
-      const imageItem = extractImageItem(parsed);
-
-      if (imageItem) {
-        console.log(`[ImageGen] SSE parser using ${eventName || "json"} image payload`);
-        return { data: [imageItem] };
-      }
-
-      if (Array.isArray(parsed?.data) && parsed.data.length > 0) {
-        lastJsonText = joined;
-      }
-
-      if (typeof parsed?.b64_json === "string" && parsed.b64_json.length > 0) {
-        partialImageBase64 = parsed.b64_json;
-      }
-
-    } catch {
-      // Ignore non-JSON event payloads and keep scanning for the final image event.
-    }
-  }
-
-  for (const candidate of rawCandidates) {
-    try {
-      const parsed = JSON.parse(candidate);
-      const imageItem = extractImageItem(parsed);
-      if (imageItem) {
-        console.log("[ImageGen] SSE parser using raw candidate payload");
-        return { data: [imageItem] };
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  const urlMatch = trimmedBody.match(/https?:\/\/[^\s"]+/i);
-  if (urlMatch) {
-    console.log("[ImageGen] SSE parser using URL regex fallback");
-    return { data: [{ url: urlMatch[0] }] };
-  }
-
-  const b64Match = trimmedBody.match(/"b64_json"\s*:\s*"([^"]+)"/);
-  if (b64Match) {
-    console.log("[ImageGen] SSE parser using b64_json regex fallback");
-    return { data: [{ b64_json: b64Match[1] }] };
-  }
-
-  if (partialImageBase64) {
-    console.log("[ImageGen] SSE parser using partial_image fallback");
-    return {
-      data: [{ b64_json: partialImageBase64 }],
-    };
-  }
-
-  if (!lastJsonText) {
-    console.warn("[ImageGen] SSE parser preview:", bodyPreview);
-    throw new Error("Image generation returned an empty SSE payload.");
-  }
-
-  return JSON.parse(lastJsonText);
-}
-
 async function parseImageGenerationResponse(response: Response) {
   const contentType = response.headers.get("content-type") || "";
-  const rawBody = await response.text();
+  const isSse = contentType.includes("text/event-stream");
 
-  if (contentType.includes("text/event-stream") || rawBody.trimStart().startsWith("event:")) {
-    return parseSsePayload(rawBody);
+  if (!isSse) {
+    const rawBody = await response.text();
+    if (rawBody.trimStart().startsWith("event:")) {
+      return parseSseFromText(rawBody);
+    }
+    return JSON.parse(rawBody);
   }
 
-  return JSON.parse(rawBody);
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("Image generation response body is not readable.");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+  let currentData = "";
+  let lastJsonText: string | null = null;
+  let finalResult: { data: { b64_json?: string; url?: string }[] } | null = null;
+  let eventCount = 0;
+  let partialBase64 = "";
+  let bytesRead = 0;
+
+  function processEvent(eventName: string, data: string) {
+    if (!data || data === "[DONE]") return;
+    eventCount++;
+
+    if (eventCount <= 2 || data.includes("b64_json") || data.includes('"url"') || data.length > 5000) {
+      console.log(`[ImageGen] SSE event #${eventCount} [${eventName}]: len=${data.length}`);
+    }
+
+    try {
+      const parsed = JSON.parse(data);
+      const imageItem = extractImageItem(parsed);
+      if (imageItem) {
+        console.log(`[ImageGen] SSE stream found image in event: ${eventName}`);
+        finalResult = { data: [imageItem] };
+      }
+      if (Array.isArray(parsed?.data) && parsed.data.length > 0) {
+        lastJsonText = data;
+      }
+      if (eventName === "done" || eventName === "response.completed") {
+        lastJsonText = data;
+      }
+      // Check for delta/text fields that might contain base64 image data
+      const deltaText = parsed?.delta?.text || parsed?.delta || parsed?.text || "";
+      if (typeof deltaText === "string" && deltaText.length > 500 && !deltaText.includes("{")) {
+        console.log(`[ImageGen] SSE delta text found in [${eventName}]: len=${deltaText.length}`);
+        partialBase64 += deltaText;
+      }
+    } catch {
+      // non-JSON data - might be base64 text delta
+      if (data.length > 500 && !data.includes("{")) {
+        // Looks like raw base64 data
+        console.log(`[ImageGen] SSE raw base64 chunk #${eventCount} [${eventName}]: len=${data.length}`);
+        if (!partialBase64) partialBase64 = data;
+        else partialBase64 += data;
+      }
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    bytesRead += value.length;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        currentEvent = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        currentData += (currentData ? "\n" : "") + line.slice(5).trim();
+      } else if (line === "") {
+        if (currentData) {
+          processEvent(currentEvent, currentData);
+          currentEvent = "";
+          currentData = "";
+        }
+      }
+    }
+  }
+
+  if (currentData) {
+    processEvent(currentEvent, currentData);
+  }
+
+  console.log(`[ImageGen] SSE stream: ${eventCount} events, ${bytesRead} bytes, found=${!!finalResult}, partialBase64Len=${partialBase64.length}`);
+  if (!finalResult && lastJsonText) {
+    console.log(`[ImageGen] SSE lastJsonText preview: ${lastJsonText.slice(0, 300)}`);
+  }
+
+  if (finalResult) return finalResult;
+  if (partialBase64.length > 100) {
+    console.log(`[ImageGen] SSE using assembled base64 from ${partialBase64.length} chars`);
+    return { data: [{ b64_json: partialBase64 }] };
+  }
+  if (lastJsonText) return JSON.parse(lastJsonText);
+
+  throw new Error("Image generation returned an empty SSE payload.");
+}
+
+function parseSseFromText(body: string) {
+  const lines = body.split(/\r?\n/);
+  let currentEvent = "";
+  let currentData = "";
+  let lastJsonText: string | null = null;
+
+  for (const line of [...lines, ""]) {
+    if (line.startsWith("event:")) {
+      currentEvent = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      currentData += (currentData ? "\n" : "") + line.slice(5).trim();
+    } else if (line === "") {
+      if (currentData && currentData !== "[DONE]") {
+        try {
+          const parsed = JSON.parse(currentData);
+          const imageItem = extractImageItem(parsed);
+          if (imageItem) {
+            console.log(`[ImageGen] SSE text found image in event: ${currentEvent}`);
+            return { data: [imageItem] };
+          }
+          if (Array.isArray(parsed?.data) && parsed.data.length > 0) {
+            lastJsonText = currentData;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      currentEvent = "";
+      currentData = "";
+    }
+  }
+
+  if (lastJsonText) return JSON.parse(lastJsonText);
+  throw new Error("Image generation returned an empty SSE payload.");
+}
+
+async function downloadAsDataUrl(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to download reference image from ${url}: ${res.status}`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  const base64 = Buffer.from(arrayBuffer).toString("base64");
+  const contentType = res.headers.get("content-type") || "image/jpeg";
+  return `data:${contentType};base64,${base64}`;
+}
+
+async function ensureDataUrls(images: string[]): Promise<string[]> {
+  return Promise.all(
+    images.map(async (image) => {
+      if (image.startsWith("data:")) return image;
+      if (/^https?:\/\//i.test(image)) return downloadAsDataUrl(image);
+      return image;
+    })
+  );
 }
 
 export async function generateImage(params: {
@@ -263,32 +316,23 @@ export async function generateImage(params: {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
 
+  const useCodexBinary = isCodexImageModel(requestedModel);
+  const imagesEndpoint = useCodexBinary
+    ? `${baseURL}/images/generations?response_format=binary`
+    : `${baseURL}/images/generations`;
+
   const executeRequest = async (
     payload: Record<string, unknown>,
-    accept: "application/json" | "text/event-stream" = "application/json"
   ) => {
-    return fetch(`${baseURL}/images/generations`, {
+    return fetch(imagesEndpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Accept: accept,
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
-  };
-
-  const shouldFallbackModel = (status: number, errorText: string) => {
-    if (status >= 500 || status === 429) return true;
-
-    const normalized = errorText.toLowerCase();
-    return (
-      normalized.includes("did not return an image") ||
-      normalized.includes("not be entitled") ||
-      normalized.includes("plus/pro required") ||
-      normalized.includes("reset after")
-    );
   };
 
   try {
@@ -307,6 +351,10 @@ export async function generateImage(params: {
         : params.referenceImageDataUrl
           ? [params.referenceImageDataUrl]
           : [];
+
+    const resolvedImages = referenceImages.length
+      ? await ensureDataUrls(referenceImages)
+      : [];
 
     let lastError: Error | null = null;
 
@@ -332,78 +380,80 @@ export async function generateImage(params: {
           basePayload.quality
         )}, background=${String(basePayload.background)}, image_detail=${String(
           basePayload.image_detail
-        )}, output_format=${String(basePayload.output_format)}, references=${referenceImages.length}, reference_source=${
-          referenceImages.length
-            ? referenceImages.every((image) => typeof image === "string" && /^https?:\/\//i.test(image))
-              ? "url"
-              : "dataurl"
+        )}, output_format=${String(basePayload.output_format)}, references=${resolvedImages.length}, reference_source=${
+          resolvedImages.length
+            ? "dataurl"
             : "none"
         }, transport=${supportsSseFallback ? "json+sse-fallback" : "json"}`
       );
 
-      const payload = referenceImages.length
-        ? referenceImages.length === 1
+      const payload = resolvedImages.length
+        ? resolvedImages.length === 1
           ? {
               ...basePayload,
-              image: referenceImages[0],
+              image: resolvedImages[0],
             }
           : isCodexImageModel(model)
             ? {
                 ...basePayload,
-                images: referenceImages,
+                images: resolvedImages,
               }
             : {
                 ...basePayload,
-                image: referenceImages,
+                image: resolvedImages,
               }
         : basePayload;
-      const hasReferencePayload = referenceImages.length > 0;
-      let attemptedWithoutReference = !hasReferencePayload;
 
-      let response = await executeRequest(payload, "application/json");
+      let response = await executeRequest(payload);
 
-      if (!response.ok && referenceImages.length > 1 && response.status === 400) {
+      if (!response.ok && resolvedImages.length > 1 && response.status === 400) {
         const errorText = await response.text();
         console.warn(`[ImageGen] ${model} rejected multiple references, retrying with first input_image:`, errorText);
         response = await executeRequest({
           ...basePayload,
-          image: referenceImages[0],
-        }, "application/json");
+          image: resolvedImages[0],
+        });
       }
 
-      if (!response.ok && hasReferencePayload && response.status === 400) {
+      if (!response.ok && resolvedImages.length > 0 && response.status === 400) {
         const errorText = await response.text();
         console.warn(`[ImageGen] ${model} rejected reference image, retrying without image:`, errorText);
-        attemptedWithoutReference = true;
-        response = await executeRequest(noReferencePayload, "application/json");
+        response = await executeRequest(noReferencePayload);
       }
 
-      if (!response.ok && hasReferencePayload && !attemptedWithoutReference) {
-        const errorText = await response.text();
+      console.log(`[ImageGen] Model ${model} response status: ${response.status}, ct: ${response.headers.get("content-type")}`);
 
-        if (shouldFallbackModel(response.status, errorText)) {
-          console.warn(
-            `[ImageGen] ${model} failed with reference image, retrying once without image:`,
-            errorText
-          );
-          attemptedWithoutReference = true;
-          response = await executeRequest(noReferencePayload, "application/json");
-        } else {
-          response = new Response(errorText, {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-          });
+      const maxParseRetries = isCodexImageModel(model) ? 3 : 1;
+      let lastParseError: Error | null = null;
+
+      for (let parseAttempt = 1; parseAttempt <= maxParseRetries; parseAttempt++) {
+        if (parseAttempt > 1) {
+          console.log(`[ImageGen] Retrying request to ${model} (attempt ${parseAttempt})...`);
+          response = await executeRequest(payload);
+          console.log(`[ImageGen] ${model} retry response status: ${response.status}`);
+          if (!response.ok) {
+            const errText = await response.text();
+            lastParseError = new Error(`Retry failed: ${response.status} ${errText}`);
+            continue;
+          }
         }
-      }
 
-      console.log(`[ImageGen] Model ${model} response status: ${response.status}`);
-
-      if (response.ok) {
         try {
           clearTimeout(timeoutId);
+
+          const ct = response.headers.get("content-type") || "";
+          if (ct.includes("image/")) {
+            const arrayBuf = await response.arrayBuffer();
+            const b64 = Buffer.from(arrayBuf).toString("base64");
+            console.log(`[ImageGen] ${model} binary response: ${arrayBuf.byteLength} bytes`);
+            return {
+              data: [{ b64_json: b64 }],
+              _meta: { model, fallbackUsed: model !== requestedModel },
+            };
+          }
+
           const result = await parseImageGenerationResponse(response);
-          console.log(`[ImageGen] Success with ${model}, got ${result?.data?.length || 0} images`);
+          console.log(`[ImageGen] Success with ${model} (attempt ${parseAttempt}), got ${result?.data?.length || 0} images`);
           return {
             ...result,
             _meta: {
@@ -412,48 +462,19 @@ export async function generateImage(params: {
             },
           };
         } catch (parseError) {
-          if (!supportsSseFallback) {
-            throw parseError instanceof Error ? parseError : new Error("Failed to parse image response.");
-          }
-
-          const parseMessage =
-            parseError instanceof Error ? parseError.message : "Unknown image response parse error.";
-
-          console.warn(
-            `[ImageGen] Failed to parse JSON response for ${model}, retrying with SSE Accept header: ${parseMessage}`
-          );
-
-          response = await executeRequest(payload, "text/event-stream");
-          console.log(`[ImageGen] Model ${model} SSE retry response status: ${response.status}`);
-
-          if (!response.ok) {
-            const retryErrorText = await response.text();
-            throw new Error(`Image generation failed after SSE retry: ${response.status} ${retryErrorText}`);
-          }
-
-          clearTimeout(timeoutId);
-          const result = await parseImageGenerationResponse(response);
-          console.log(`[ImageGen] Success with ${model} after SSE retry, got ${result?.data?.length || 0} images`);
-          return {
-            ...result,
-            _meta: {
-              model,
-              fallbackUsed: model !== requestedModel,
-            },
-          };
+          lastParseError = parseError instanceof Error ? parseError : new Error("Failed to parse image response.");
+          console.warn(`[ImageGen] ${model} parse attempt ${parseAttempt}/${maxParseRetries} failed: ${lastParseError.message}`);
         }
       }
 
-      const errorText = await response.text();
-      const error = new Error(`Image generation failed: ${response.status} ${errorText}`);
-      lastError = error;
+      lastError = lastParseError || new Error("Image generation failed: all parse attempts exhausted");
 
-      if (model !== candidateModels[candidateModels.length - 1] && shouldFallbackModel(response.status, errorText)) {
-        console.warn(`[ImageGen] ${model} failed, retrying with fallback model.`);
+      if (model !== candidateModels[candidateModels.length - 1]) {
+        console.warn(`[ImageGen] ${model} failed after ${maxParseRetries} attempts, trying fallback model.`);
         continue;
       }
 
-      throw error;
+      throw lastError;
     }
 
     throw lastError || new Error("Image generation failed");

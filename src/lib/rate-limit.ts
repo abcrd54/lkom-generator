@@ -10,24 +10,34 @@ export async function checkImageRateLimit(userId: string): Promise<{
 }> {
   try {
     const supabase = await createClient();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    // Use atomic database function (no race condition)
-    const { data, error } = await supabase.rpc("check_and_log_image_usage", {
-      p_user_id: userId,
-      p_model: "cx/gpt-5.5-image",
-    });
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("daily_image_limit")
+      .eq("id", userId)
+      .single();
 
-    if (error) {
-      console.error("Rate limit RPC error:", error);
-      // Fallback to simple check if function doesn't exist yet
-      return await fallbackRateLimit(userId);
-    }
+    const dailyLimit = profile?.daily_image_limit ?? DAILY_IMAGE_LIMIT;
+
+    const { count } = await supabase
+      .from("usage_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("type", "image")
+      .gte("created_at", today.toISOString());
+
+    const used = count || 0;
+    const remaining = dailyLimit - used;
+    const resetAt = new Date(today);
+    resetAt.setDate(resetAt.getDate() + 1);
 
     return {
-      allowed: data.allowed,
-      used: data.used,
-      remaining: data.remaining,
-      resetAt: data.reset_at,
+      allowed: remaining > 0,
+      used,
+      remaining: Math.max(0, remaining),
+      resetAt: resetAt.toISOString(),
     };
   } catch (error) {
     console.error("Rate limit check error:", error);
@@ -40,51 +50,16 @@ export async function checkImageRateLimit(userId: string): Promise<{
   }
 }
 
-// Fallback for when DB function doesn't exist yet
-async function fallbackRateLimit(userId: string): Promise<{
-  allowed: boolean;
-  used: number;
-  remaining: number;
-  resetAt: string;
-}> {
-  const supabase = await createClient();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("daily_image_limit")
-    .eq("id", userId)
-    .single();
-
-  const dailyLimit = profile?.daily_image_limit ?? DAILY_IMAGE_LIMIT;
-
-  const { count } = await supabase
-    .from("usage_logs")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("type", "image")
-    .gte("created_at", today.toISOString());
-
-  const used = count || 0;
-  const remaining = dailyLimit - used;
-  const resetAt = new Date(today);
-  resetAt.setDate(resetAt.getDate() + 1);
-
-  // Still insert if allowed (non-atomic, but better than nothing)
-  if (remaining > 0) {
+export async function logImageUsage(userId: string, model: string): Promise<void> {
+  try {
+    const supabase = await createClient();
     await supabase.from("usage_logs").insert({
       user_id: userId,
       type: "image",
-      model: "cx/gpt-5.5-image",
+      model,
       tokens: 0,
     });
+  } catch (error) {
+    console.error("Failed to log image usage:", error);
   }
-
-  return {
-    allowed: remaining > 0,
-    used,
-    remaining: Math.max(0, remaining),
-    resetAt: resetAt.toISOString(),
-  };
 }
