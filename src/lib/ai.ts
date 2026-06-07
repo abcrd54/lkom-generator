@@ -318,6 +318,7 @@ export async function generateImage(params: {
   const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
 
   const useCodexBinary = isCodexImageModel(requestedModel);
+  const goProxyUrl = process.env.GO_PROXY_URL || "http://localhost:20129";
   const imagesEndpoint = useCodexBinary
     ? `${baseURL}/images/generations?response_format=binary`
     : `${baseURL}/images/generations`;
@@ -325,15 +326,14 @@ export async function generateImage(params: {
   function executeCodexBinaryRequest(payload: Record<string, unknown>): Promise<Response> {
     return new Promise((resolve, reject) => {
       const body = JSON.stringify(payload);
-      const url = new URL(imagesEndpoint);
+      const url = new URL(`${goProxyUrl}/generate`);
       const req = http.request({
         hostname: url.hostname,
-        port: url.port || 80,
-        path: url.pathname + url.search,
+        port: url.port || 20129,
+        path: url.pathname,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
           "Content-Length": Buffer.byteLength(body),
         },
       }, (res) => {
@@ -354,7 +354,7 @@ export async function generateImage(params: {
         res.on("error", reject);
       });
       req.on("error", reject);
-      req.setTimeout(90000, () => { req.destroy(); reject(new Error("Request timeout 90s")); });
+      req.setTimeout(600000, () => { req.destroy(); reject(new Error("Go proxy timeout")); });
       req.write(body);
       req.end();
     });
@@ -509,6 +509,20 @@ export async function generateImage(params: {
               data: [{ b64_json: b64 }],
               _meta: { model, fallbackUsed: model !== requestedModel },
             };
+          }
+
+          if (useCodexBinary && ct.includes("application/json")) {
+            const jsonBody = await response.json() as { success?: boolean; b64_json?: string; error?: string; size?: number };
+            if (jsonBody.success && jsonBody.b64_json) {
+              console.log(`[ImageGen] ${model} go-proxy response: ${jsonBody.size || 0} bytes`);
+              return {
+                data: [{ b64_json: jsonBody.b64_json }],
+                _meta: { model, fallbackUsed: model !== requestedModel },
+              };
+            }
+            if (jsonBody.error) {
+              throw new Error(`Go proxy error: ${jsonBody.error}`);
+            }
           }
 
           const result = await parseImageGenerationResponse(response);

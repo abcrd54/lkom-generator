@@ -15,17 +15,34 @@ services:
       timeout: 5s
       retries: 5
 
+  go-proxy:
+    build:
+      context: ./go-proxy
+    environment:
+      PORT: "20129"
+      NINEROUTER_URL: "http://host.docker.internal:20128"
+      NINEROUTER_API_KEY: ${NINEROUTER_API_KEY}
+    ports:
+      - "20129:20129"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
   image-worker:
     build:
       context: ../..
       dockerfile: deploy/vps/Dockerfile.worker
     env_file:
       - ./.env.worker
+    environment:
+      GO_PROXY_URL: "http://go-proxy:20129"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
+      go-proxy:
+        condition: service_started
     restart: unless-stopped
 
 volumes:
