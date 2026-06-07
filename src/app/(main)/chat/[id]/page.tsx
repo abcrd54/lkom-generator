@@ -114,56 +114,14 @@ export default function ChatIdPage() {
   }, [conversationId, fetchQuota, loadMessages, router, setMessages, startPolling, stopPolling]);
 
   useEffect(() => {
-    if (!conversationId || !conversationReady) return;
+    if (!conversationId || !conversationReady || !pendingImageJob) return;
 
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`messages-${conversationId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        async (payload) => {
-          const newMsg = payload.new as { id: string; role: string; content: string | null; model: string | null; created_at: string };
-          if (newMsg.role === "assistant") {
-            const { data: imgData } = await supabase
-              .from("images")
-              .select("r2_url, expires_at, storage_deleted_at")
-              .eq("message_id", newMsg.id)
-              .maybeSingle();
+    const interval = setInterval(async () => {
+      await loadMessages(conversationId);
+    }, 5000);
 
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === newMsg.id)) return prev;
-              return [
-                ...prev,
-                {
-                  id: newMsg.id,
-                  role: "assistant" as const,
-                  content: newMsg.content || "",
-                  model: newMsg.model || undefined,
-                  imageUrl: imgData?.r2_url || undefined,
-                  imageExpired: imgData ? (!imgData.r2_url || !!imgData.storage_deleted_at || new Date(imgData.expires_at).getTime() <= Date.now()) : false,
-                  imageExpiresAt: imgData?.expires_at,
-                  createdAt: newMsg.created_at,
-                },
-              ];
-            });
-
-            setPendingImageJob(false);
-            stopPolling();
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [conversationId, conversationReady, setMessages, stopPolling]);
+    return () => clearInterval(interval);
+  }, [conversationId, conversationReady, pendingImageJob, loadMessages]);
 
   const handleNewChat = useCallback(async () => {
     setMessages([]);
