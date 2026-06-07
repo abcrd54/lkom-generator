@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Sidebar, MobileSidebar } from "@/components/chat/sidebar";
 import { ChatArea } from "@/components/chat/chat-area";
@@ -19,12 +19,48 @@ export default function ChatIdPage() {
   const router = useRouter();
   const conversationId = params?.id as string;
   const [conversationReady, setConversationReady] = useState(false);
+  const [pendingImageJob, setPendingImageJob] = useState(false);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const { messages, loading: chatLoading, streamingContent, loadMessages, sendMessage, setMessages } = useChat();
   const { loading: imageLoading, quota, generateImage, fetchQuota } = useImageGen();
   const { createConversation, refreshTrigger, refresh } = useConversations();
 
   const currentConversationId = conversationId || null;
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback((jobId: string, convId: string) => {
+    stopPolling();
+    setPendingImageJob(true);
+
+    pollingRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/images/status/${jobId}`);
+        const data = await res.json();
+
+        if (data.status === "completed") {
+          stopPolling();
+          setPendingImageJob(false);
+          await loadMessages(convId);
+          await fetchQuota();
+          refresh();
+        } else if (data.status === "failed") {
+          stopPolling();
+          setPendingImageJob(false);
+          toast.error(data.error || "Gagal generate gambar");
+          await loadMessages(convId);
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 3000);
+  }, [stopPolling, loadMessages, fetchQuota, refresh]);
 
   useEffect(() => {
     const validateConversation = async () => {
@@ -58,12 +94,76 @@ export default function ChatIdPage() {
       }
 
       setConversationReady(true);
-      loadMessages(conversationId);
+      await loadMessages(conversationId);
+
+      try {
+        const activeRes = await fetch(`/api/images/active/${conversationId}`);
+        const activeData = await activeRes.json();
+        if (activeData.hasPendingJob && activeData.jobId) {
+          startPolling(activeData.jobId, conversationId);
+        }
+      } catch {
+        // ignore
+      }
     };
 
     validateConversation();
     fetchQuota();
-  }, [conversationId, fetchQuota, loadMessages, router, setMessages]);
+
+    return () => stopPolling();
+  }, [conversationId, fetchQuota, loadMessages, router, setMessages, startPolling, stopPolling]);
+
+  useEffect(() => {
+    if (!conversationId || !conversationReady) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`messages-${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        async (payload) => {
+          const newMsg = payload.new as { id: string; role: string; content: string | null; model: string | null; created_at: string };
+          if (newMsg.role === "assistant") {
+            const { data: imgData } = await supabase
+              .from("images")
+              .select("r2_url, expires_at, storage_deleted_at")
+              .eq("message_id", newMsg.id)
+              .maybeSingle();
+
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [
+                ...prev,
+                {
+                  id: newMsg.id,
+                  role: "assistant" as const,
+                  content: newMsg.content || "",
+                  model: newMsg.model || undefined,
+                  imageUrl: imgData?.r2_url || undefined,
+                  imageExpired: imgData ? (!imgData.r2_url || !!imgData.storage_deleted_at || new Date(imgData.expires_at).getTime() <= Date.now()) : false,
+                  imageExpiresAt: imgData?.expires_at,
+                  createdAt: newMsg.created_at,
+                },
+              ];
+            });
+
+            setPendingImageJob(false);
+            stopPolling();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId, conversationReady, setMessages, stopPolling]);
 
   const handleNewChat = useCallback(async () => {
     setMessages([]);
@@ -132,7 +232,7 @@ export default function ChatIdPage() {
     }
   }, [ensureConversation, generateImage, setMessages, refresh]);
 
-  const loading = chatLoading || imageLoading;
+  const loading = chatLoading || imageLoading || pendingImageJob;
 
   return (
     <div className="flex h-screen bg-slate-50/50">
@@ -175,7 +275,7 @@ export default function ChatIdPage() {
           messages={messages}
           loading={loading}
           streamingContent={streamingContent}
-          pendingText={imageLoading ? "Gambar sedang dibuat" : "AI sedang menyusun jawaban"}
+          pendingText={pendingImageJob ? "Gambar sedang dibuat..." : imageLoading ? "Gambar masuk antrean" : "AI sedang menyusun jawaban"}
         />
 
         <ChatInput
