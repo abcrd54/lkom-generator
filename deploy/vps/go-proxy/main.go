@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,11 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type ImageRequest struct {
@@ -31,6 +37,9 @@ type ImageResponse struct {
 	Size    int    `json:"size,omitempty"`
 }
 
+var s3Client *s3.Client
+var r2Bucket string
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -43,6 +52,30 @@ func main() {
 	apiKey := os.Getenv("NINEROUTER_API_KEY")
 	if apiKey == "" {
 		apiKey = "sk-4ab3e463a07ad0cd-939969-c4fd7754"
+	}
+
+	r2Bucket = os.Getenv("R2_BUCKET_NAME")
+	if r2Bucket == "" {
+		r2Bucket = "lkom"
+	}
+
+	r2AccountID := os.Getenv("R2_ACCOUNT_ID")
+	r2AccessKey := os.Getenv("R2_ACCESS_KEY_ID")
+	r2SecretKey := os.Getenv("R2_SECRET_ACCESS_KEY")
+
+	if r2AccountID != "" && r2AccessKey != "" && r2SecretKey != "" {
+		cfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
+			awsconfig.WithRegion("auto"),
+			awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(r2AccessKey, r2SecretKey, "")),
+		)
+		if err != nil {
+			log.Printf("[GoProxy] Failed to load AWS config: %v", err)
+		} else {
+			s3Client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+				o.BaseEndpoint = aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", r2AccountID))
+			})
+			log.Printf("[GoProxy] R2 S3 client initialized (bucket=%s)", r2Bucket)
+		}
 	}
 
 	http.HandleFunc("/generate", func(w http.ResponseWriter, r *http.Request) {
@@ -76,29 +109,100 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
+func downloadFromR2(r2URL string) (string, error) {
+	if s3Client == nil {
+		return "", fmt.Errorf("R2 client not initialized")
+	}
+
+	key := extractR2Key(r2URL)
+	if key == "" {
+		return "", fmt.Errorf("not an R2 URL: %s", r2URL[:min(80, len(r2URL))])
+	}
+
+	log.Printf("[GoProxy] Downloading from R2: %s", key)
+
+	result, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
+		Bucket: aws.String(r2Bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return "", fmt.Errorf("R2 GetObject failed: %v", err)
+	}
+	defer result.Body.Close()
+
+	body, err := io.ReadAll(result.Body)
+	if err != nil {
+		return "", fmt.Errorf("R2 read body failed: %v", err)
+	}
+
+	ct := "image/jpeg"
+	if result.ContentType != nil {
+		ct = *result.ContentType
+	}
+
+	dataURL := "data:" + ct + ";base64," + base64Encode(body)
+	log.Printf("[GoProxy] R2 download success: %d bytes -> data URL %d chars", len(body), len(dataURL))
+	return dataURL, nil
+}
+
+func extractR2Key(url string) string {
+	if strings.Contains(url, "r2.cloudflarestorage.com") {
+		parts := strings.SplitN(url, ".r2.cloudflarestorage.com/", 2)
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+
+	if strings.Contains(url, "storage.lkom.cloud/") {
+		parts := strings.SplitN(url, "storage.lkom.cloud/", 2)
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+
+	return ""
+}
+
+func isR2URL(url string) bool {
+	return strings.Contains(url, "r2.cloudflarestorage.com") || strings.Contains(url, "storage.lkom.cloud")
+}
+
 func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 	if req.Image != "" && strings.HasPrefix(req.Image, "http") {
-		log.Printf("[GoProxy] Downloading image from URL: %s", req.Image[:min(80, len(req.Image))])
-		dataURL, err := downloadAsDataURL(req.Image)
+		var dataURL string
+		var err error
+
+		if isR2URL(req.Image) {
+			dataURL, err = downloadFromR2(req.Image)
+		} else {
+			dataURL, err = downloadAsDataURL(req.Image)
+		}
+
 		if err != nil {
 			log.Printf("[GoProxy] Failed to download image: %v", err)
 			return ImageResponse{Error: fmt.Sprintf("Failed to download reference image: %v", err)}
 		}
 		req.Image = dataURL
-		log.Printf("[GoProxy] Converted to data URL: %d chars", len(dataURL))
+		log.Printf("[GoProxy] Image converted to data URL: %d chars", len(dataURL))
 	}
 
 	if len(req.Images) > 0 {
 		for i, img := range req.Images {
 			if strings.HasPrefix(img, "http") {
-				log.Printf("[GoProxy] Downloading image[%d] from URL: %s", i, img[:min(80, len(img))])
-				dataURL, err := downloadAsDataURL(img)
+				var dataURL string
+				var err error
+
+				if isR2URL(img) {
+					dataURL, err = downloadFromR2(img)
+				} else {
+					dataURL, err = downloadAsDataURL(img)
+				}
+
 				if err != nil {
 					log.Printf("[GoProxy] Failed to download image[%d]: %v", i, err)
 					return ImageResponse{Error: fmt.Sprintf("Failed to download reference image[%d]: %v", i, err)}
 				}
 				req.Images[i] = dataURL
-				log.Printf("[GoProxy] Converted image[%d] to data URL: %d chars", i, len(dataURL))
 			}
 		}
 	}

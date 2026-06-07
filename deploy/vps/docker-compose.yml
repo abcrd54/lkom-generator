@@ -18,10 +18,11 @@ services:
   go-proxy:
     build:
       context: ./go-proxy
+    env_file:
+      - ./.env.worker
     environment:
       PORT: "20129"
       NINEROUTER_URL: "http://172.17.0.1:20128"
-      NINEROUTER_API_KEY: ${NINEROUTER_API_KEY}
     ports:
       - "20129:20129"
     extra_hosts:
