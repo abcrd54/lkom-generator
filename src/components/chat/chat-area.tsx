@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChatBubble } from "./chat-bubble";
-import { GraduationCap, FileText, Image as ImageIcon, BarChart3, GitBranch } from "lucide-react";
+import { GraduationCap, FileText, Image as ImageIcon, BarChart3, GitBranch, Clock } from "lucide-react";
 import type { ChatMessage } from "@/types";
 
 interface ChatAreaProps {
@@ -10,6 +10,27 @@ interface ChatAreaProps {
   loading: boolean;
   streamingContent: string;
   pendingText?: string;
+}
+
+function ElapsedTimer() {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isLong = seconds > 30;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs ${isLong ? "text-amber-600 font-medium" : "text-slate-400"}`}>
+      <Clock className="h-3 w-3" />
+      {mins > 0 ? `${mins}m ${secs}s` : `${secs}s`}
+      {isLong && " - Sedang diproses, mohon tunggu..."}
+    </span>
+  );
 }
 
 export function ChatArea({
@@ -79,16 +100,27 @@ export function ChatArea({
 
         {/* Pending AI bubble before stream starts */}
         {loading && !streamingContent && (
-          <ChatBubble
-            message={{
-              id: "pending",
-              role: "assistant",
-              content: "",
-              createdAt: new Date().toISOString(),
-            }}
-            isPending={true}
-            pendingText={pendingText}
-          />
+          <div className="flex justify-start">
+            <div className="flex items-start gap-3 max-w-[85%]">
+              <div className="h-8 w-8 shrink-0 rounded-full bg-blue-100 flex items-center justify-center mt-1">
+                <GraduationCap className="h-4 w-4 text-blue-700" />
+              </div>
+              <div className="bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-bl-sm shadow-sm px-5 py-4">
+                <div className="space-y-3 min-w-[220px]">
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    <span className="inline-flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                    {pendingText}
+                  </div>
+                  <ElapsedTimer />
+                  <div className="space-y-2">
+                    <div className="h-2.5 w-40 rounded-full bg-slate-200/90 animate-pulse" />
+                    <div className="h-2.5 w-56 rounded-full bg-slate-200/80 animate-pulse [animation-delay:150ms]" />
+                    <div className="h-2.5 w-32 rounded-full bg-slate-200/70 animate-pulse [animation-delay:300ms]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         <div ref={bottomRef} />
