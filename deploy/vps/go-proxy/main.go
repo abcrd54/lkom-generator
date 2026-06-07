@@ -144,7 +144,7 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 			time.Sleep(delay)
 		}
 
-		client := &http.Client{Timeout: 120 * time.Second}
+		client := &http.Client{Timeout: 300 * time.Second}
 		body, _ := json.Marshal(req)
 
 		endpoint := fmt.Sprintf("%s/v1/images/generations?response_format=binary", apiURL)
@@ -174,7 +174,17 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 		if resp.StatusCode != http.StatusOK {
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			log.Printf("[GoProxy] Error body: %s", string(bodyBytes[:min(200, len(bodyBytes))]))
+			errText := string(bodyBytes)
+			log.Printf("[GoProxy] Error %d: %s", resp.StatusCode, errText[:min(300, len(errText))])
+
+			if strings.Contains(errText, "not be entitled") || strings.Contains(errText, "Plus/Pro") {
+				log.Printf("[GoProxy] Account issue, retrying...")
+				continue
+			}
+			if resp.StatusCode == 400 && strings.Contains(errText, "Failed to download") {
+				log.Printf("[GoProxy] Download failed, retrying...")
+				continue
+			}
 			continue
 		}
 
@@ -182,12 +192,15 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 		resp.Body.Close()
 
 		if strings.Contains(ct, "image") || strings.Contains(ct, "octet-stream") {
-			log.Printf("[GoProxy] SUCCESS (binary): %d bytes in %.1fs", len(bodyBytes), elapsed)
-			return ImageResponse{
-				Success: true,
-				B64JSON: base64Encode(bodyBytes),
-				Size:    len(bodyBytes),
+			if len(bodyBytes) > 10000 {
+				log.Printf("[GoProxy] SUCCESS (binary): %d bytes in %.1fs", len(bodyBytes), elapsed)
+				return ImageResponse{
+					Success: true,
+					B64JSON: base64Encode(bodyBytes),
+					Size:    len(bodyBytes),
+				}
 			}
+			log.Printf("[GoProxy] Binary response too small (%d bytes), might be error", len(bodyBytes))
 		}
 
 		text := string(bodyBytes)
@@ -211,10 +224,10 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 			}
 		}
 
-		log.Printf("[GoProxy] No image found, body=%d bytes, ct=%s, preview: %s", len(bodyBytes), ct, string(bodyBytes[:min(200, len(bodyBytes))]))
+		log.Printf("[GoProxy] No image found, body=%d bytes, ct=%s, preview: %s", len(bodyBytes), ct, text[:min(200, len(text))])
 	}
 
-	return ImageResponse{Error: "All attempts failed"}
+	return ImageResponse{Error: "All attempts failed after 5 retries"}
 }
 
 func parseSSEText(text string) string {
