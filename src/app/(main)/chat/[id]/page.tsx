@@ -94,17 +94,19 @@ export default function ChatIdPage() {
       }
 
       setConversationReady(true);
-      await loadMessages(conversationId);
 
       try {
         const activeRes = await fetch(`/api/images/active/${conversationId}`);
         const activeData = await activeRes.json();
         if (activeData.hasPendingJob && activeData.jobId) {
+          setPendingImageJob(true);
           startPolling(activeData.jobId, conversationId);
         }
       } catch {
         // ignore
       }
+
+      await loadMessages(conversationId);
     };
 
     validateConversation();
