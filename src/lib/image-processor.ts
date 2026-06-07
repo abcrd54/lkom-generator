@@ -1,6 +1,4 @@
-import { randomUUID } from "crypto";
 import { generateImage } from "@/lib/ai";
-import { uploadToR2 } from "@/lib/r2";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { ImageJobData, ImageJobResult } from "@/lib/image-jobs";
 import http from "node:http";
@@ -79,16 +77,21 @@ async function uploadReferenceImages(data: ImageJobData): Promise<string[] | und
     return undefined;
   }
 
+  console.log(`[ImageProcessor] Processing ${sources.length} reference images`);
+
   const results: string[] = [];
   for (const source of sources) {
     if (!source) continue;
 
     if (source.startsWith("data:")) {
+      console.log(`[ImageProcessor] Uploading data URL (${source.length} chars) to Go proxy`);
       const { mimeType, buffer } = parseDataUrl(source);
       const extension = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
       const url = await uploadToGoProxy(buffer, extension);
+      console.log(`[ImageProcessor] Uploaded to Go proxy: ${url}`);
       results.push(url);
     } else if (/^https?:\/\//i.test(source)) {
+      console.log(`[ImageProcessor] Using URL directly: ${source.slice(0, 80)}`);
       results.push(source);
     }
   }
@@ -147,7 +150,6 @@ async function doProcessImageJob(data: ImageJobData): Promise<ImageJobResult> {
   }
 
   let imageBuffer: Buffer;
-  let contentType = "image/png";
 
   if (imageData.b64_json) {
     imageBuffer = Buffer.from(imageData.b64_json, "base64");
@@ -158,17 +160,11 @@ async function doProcessImageJob(data: ImageJobData): Promise<ImageJobResult> {
     }
     const arrayBuffer = await imgResponse.arrayBuffer();
     imageBuffer = Buffer.from(arrayBuffer);
-    contentType = imgResponse.headers.get("content-type") || "image/png";
   } else {
     throw new Error("Could not extract image from response");
   }
 
-  const key = `images/${data.userId}/${randomUUID()}.png`;
-  const imageUrl = await uploadToR2({
-    key,
-    body: imageBuffer,
-    contentType,
-  });
+  const imageUrl = await uploadToGoProxy(imageBuffer, "png");
 
   const supabase = createServiceClient();
   const expiresAt = new Date();
