@@ -54,6 +54,7 @@ export default function ChatIdPage() {
           stopPolling();
           setPendingImageJob(false);
 
+          await new Promise((r) => setTimeout(r, 1500));
           await loadMessages(convId);
 
           const supabase = createClient();

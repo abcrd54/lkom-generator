@@ -77,6 +77,32 @@ func main() {
 }
 
 func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
+	if req.Image != "" && strings.HasPrefix(req.Image, "http") {
+		log.Printf("[GoProxy] Downloading image from URL: %s", req.Image[:min(80, len(req.Image))])
+		dataURL, err := downloadAsDataURL(req.Image)
+		if err != nil {
+			log.Printf("[GoProxy] Failed to download image: %v", err)
+			return ImageResponse{Error: fmt.Sprintf("Failed to download reference image: %v", err)}
+		}
+		req.Image = dataURL
+		log.Printf("[GoProxy] Converted to data URL: %d chars", len(dataURL))
+	}
+
+	if len(req.Images) > 0 {
+		for i, img := range req.Images {
+			if strings.HasPrefix(img, "http") {
+				log.Printf("[GoProxy] Downloading image[%d] from URL: %s", i, img[:min(80, len(img))])
+				dataURL, err := downloadAsDataURL(img)
+				if err != nil {
+					log.Printf("[GoProxy] Failed to download image[%d]: %v", i, err)
+					return ImageResponse{Error: fmt.Sprintf("Failed to download reference image[%d]: %v", i, err)}
+				}
+				req.Images[i] = dataURL
+				log.Printf("[GoProxy] Converted image[%d] to data URL: %d chars", i, len(dataURL))
+			}
+		}
+	}
+
 	maxRetries := 5
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if attempt > 1 {
@@ -182,6 +208,31 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 	}
 
 	return ImageResponse{Error: "All attempts failed"}
+}
+
+func downloadAsDataURL(url string) (string, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "image/jpeg"
+	}
+
+	return "data:" + ct + ";base64," + base64Encode(body), nil
 }
 
 func base64Encode(data []byte) string {
