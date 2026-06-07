@@ -207,8 +207,8 @@ async function parseImageGenerationResponse(response: Response) {
   }
 
   console.log(`[ImageGen] SSE stream: ${eventCount} events, ${bytesRead} bytes, found=${!!finalResult}, partialBase64Len=${partialBase64.length}`);
-  if (!finalResult && lastJsonText) {
-    console.log(`[ImageGen] SSE lastJsonText preview: ${lastJsonText.slice(0, 300)}`);
+  if (!finalResult && lastJsonText !== null) {
+    console.log(`[ImageGen] SSE lastJsonText preview: ${String(lastJsonText).slice(0, 300)}`);
   }
 
   if (finalResult) return finalResult;
