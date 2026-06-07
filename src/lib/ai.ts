@@ -423,12 +423,14 @@ export async function generateImage(params: {
 
       console.log(`[ImageGen] Model ${model} response status: ${response.status}, ct: ${response.headers.get("content-type")}`);
 
-      const maxParseRetries = isCodexImageModel(model) ? 3 : 1;
+      const maxParseRetries = isCodexImageModel(model) ? 5 : 1;
       let lastParseError: Error | null = null;
 
       for (let parseAttempt = 1; parseAttempt <= maxParseRetries; parseAttempt++) {
         if (parseAttempt > 1) {
-          console.log(`[ImageGen] Retrying request to ${model} (attempt ${parseAttempt})...`);
+          const delayMs = response?.status === 502 ? 5000 : 2000;
+          console.log(`[ImageGen] Retrying request to ${model} (attempt ${parseAttempt}) after ${delayMs}ms...`);
+          await new Promise((r) => setTimeout(r, delayMs));
           response = await executeRequest(payload);
           console.log(`[ImageGen] ${model} retry response status: ${response.status}`);
           if (!response.ok) {
