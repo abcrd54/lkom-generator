@@ -25,6 +25,8 @@ services:
       NINEROUTER_URL: "http://172.17.0.1:20128"
     ports:
       - "20129:20129"
+    volumes:
+      - go_proxy_data:/data/images
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -48,3 +50,4 @@ services:
 
 volumes:
   redis_data:
+  go_proxy_data:

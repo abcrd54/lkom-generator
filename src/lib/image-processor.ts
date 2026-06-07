@@ -3,6 +3,7 @@ import { generateImage } from "@/lib/ai";
 import { uploadToR2 } from "@/lib/r2";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { ImageJobData, ImageJobResult } from "@/lib/image-jobs";
+import http from "node:http";
 
 const PRIMARY_IMAGE_MODEL = "cx/gpt-5.5-image";
 
@@ -18,46 +19,81 @@ function parseDataUrl(dataUrl: string) {
   };
 }
 
-async function uploadReferenceImages(data: ImageJobData) {
-  if (data.referenceImageUrl) {
-    return [data.referenceImageUrl];
-  }
+async function uploadToGoProxy(buffer: Buffer, extension: string): Promise<string> {
+  const goProxyUrl = process.env.GO_PROXY_URL || "http://localhost:20129";
+  const b64 = buffer.toString("base64");
 
-  if (data.referenceImageUrls?.length) {
-    return data.referenceImageUrls;
-  }
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ data: b64, extension });
+    const url = new URL(`${goProxyUrl}/upload`);
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port || 20129,
+      path: url.pathname,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        const total = Buffer.concat(chunks);
+        if (res.statusCode !== 200) {
+          reject(new Error(`Go proxy upload failed: ${res.statusCode} ${total.toString()}`));
+          return;
+        }
+        try {
+          const json = JSON.parse(total.toString()) as { url?: string };
+          if (json.url) {
+            resolve(json.url);
+          } else {
+            reject(new Error("Go proxy upload returned no URL"));
+          }
+        } catch {
+          reject(new Error("Go proxy upload returned invalid JSON"));
+        }
+      });
+      res.on("error", reject);
+    });
+    req.on("error", reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error("Upload timeout")); });
+    req.write(body);
+    req.end();
+  });
+}
 
+async function uploadReferenceImages(data: ImageJobData): Promise<string[] | undefined> {
   const sources = data.referenceImages?.length
-    ? data.referenceImages
-    : data.referenceImage
-      ? [data.referenceImage]
-      : [];
+    ? data.referenceImages.map((img) => img.dataUrl || img.url || "")
+    : data.referenceImage?.dataUrl
+      ? [data.referenceImage.dataUrl]
+      : data.referenceImageUrls?.length
+        ? data.referenceImageUrls
+        : data.referenceImageUrl
+          ? [data.referenceImageUrl]
+          : [];
 
   if (!sources.length) {
     return undefined;
   }
 
-  return Promise.all(
-    sources.map(async (image, index) => {
-      if (!image.dataUrl) {
-        throw new Error("Missing reference image data URL.");
-      }
+  const results: string[] = [];
+  for (const source of sources) {
+    if (!source) continue;
 
-      const { mimeType, buffer } = parseDataUrl(image.dataUrl);
-      const extension =
-        mimeType === "image/png"
-          ? "png"
-          : mimeType === "image/webp"
-            ? "webp"
-            : "jpg";
+    if (source.startsWith("data:")) {
+      const { mimeType, buffer } = parseDataUrl(source);
+      const extension = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
+      const url = await uploadToGoProxy(buffer, extension);
+      results.push(url);
+    } else if (/^https?:\/\//i.test(source)) {
+      results.push(source);
+    }
+  }
 
-      return uploadToR2({
-        key: `references/${data.userId}/${randomUUID()}-${index}.${extension}`,
-        body: buffer,
-        contentType: mimeType,
-      });
-    })
-  );
+  return results.length ? results : undefined;
 }
 
 export async function processImageJob(data: ImageJobData): Promise<ImageJobResult> {
