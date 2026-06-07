@@ -441,6 +441,11 @@ export async function generateImage(params: {
         try {
           clearTimeout(timeoutId);
 
+          if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`API error ${response.status}: ${errBody.slice(0, 300)}`);
+          }
+
           const ct = response.headers.get("content-type") || "";
           if (ct.includes("image/")) {
             const arrayBuf = await response.arrayBuffer();
