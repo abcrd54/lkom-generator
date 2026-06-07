@@ -204,35 +204,65 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 		}
 
 		text := string(bodyBytes)
-		if strings.Contains(text, "event:") && strings.Contains(text, "data:") {
+		if strings.Contains(text, "event:") || strings.Contains(text, "data:") {
 			lines := strings.Split(text, "\n")
+			var foundB64 string
 			for _, line := range lines {
-				if strings.HasPrefix(line, "data:") {
-					data := strings.TrimPrefix(line, "data:")
-					data = strings.TrimSpace(data)
-					if data == "[DONE]" || data == "" {
-						continue
-					}
-					var parsed map[string]interface{}
-					if json.Unmarshal([]byte(data), &parsed) == nil {
-						if b64, ok := parsed["b64_json"].(string); ok && len(b64) > 100 {
-							log.Printf("[GoProxy] SUCCESS (sse): b64 len=%d", len(b64))
-							return ImageResponse{Success: true, B64JSON: b64, Size: len(bodyBytes)}
+				line = strings.TrimSpace(line)
+				if !strings.HasPrefix(line, "data:") {
+					continue
+				}
+				data := strings.TrimPrefix(line, "data:")
+				data = strings.TrimSpace(data)
+				if data == "[DONE]" || data == "" {
+					continue
+				}
+
+				var parsed map[string]interface{}
+				if json.Unmarshal([]byte(data), &parsed) != nil {
+					continue
+				}
+
+				if b64, ok := parsed["b64_json"].(string); ok && len(b64) > 100 {
+					foundB64 = b64
+				}
+
+				if dataArr, ok := parsed["data"].([]interface{}); ok && len(dataArr) > 0 {
+					if item, ok := dataArr[0].(map[string]interface{}); ok {
+						if b64, ok := item["b64_json"].(string); ok && len(b64) > 100 {
+							foundB64 = b64
 						}
-						if dataArr, ok := parsed["data"].([]interface{}); ok && len(dataArr) > 0 {
-							if item, ok := dataArr[0].(map[string]interface{}); ok {
-								if b64, ok := item["b64_json"].(string); ok && len(b64) > 100 {
-									log.Printf("[GoProxy] SUCCESS (sse data): b64 len=%d", len(b64))
-									return ImageResponse{Success: true, B64JSON: b64, Size: len(bodyBytes)}
-								}
+					}
+				}
+
+				if textContent, ok := parsed["text"].(string); ok && len(textContent) > 1000 && !strings.Contains(textContent, "{") {
+					foundB64 = textContent
+				}
+
+				if delta, ok := parsed["delta"].(map[string]interface{}); ok {
+					if textContent, ok := delta["text"].(string); ok && len(textContent) > 1000 && !strings.Contains(textContent, "{") {
+						foundB64 = textContent
+					}
+				}
+
+				if content, ok := parsed["content"].([]interface{}); ok {
+					for _, c := range content {
+						if item, ok := c.(map[string]interface{}); ok {
+							if b64, ok := item["b64_json"].(string); ok && len(b64) > 100 {
+								foundB64 = b64
 							}
 						}
 					}
 				}
 			}
+
+			if foundB64 != "" {
+				log.Printf("[GoProxy] SUCCESS (sse): b64 len=%d", len(foundB64))
+				return ImageResponse{Success: true, B64JSON: foundB64, Size: len(bodyBytes)}
+			}
 		}
 
-		log.Printf("[GoProxy] Unknown format, preview: %s", string(bodyBytes[:min(300, len(bodyBytes))]))
+		log.Printf("[GoProxy] Unknown format, body=%d bytes, preview: %s", len(bodyBytes), string(bodyBytes[:min(300, len(bodyBytes))]))
 	}
 
 	return ImageResponse{Error: "All attempts failed"}
