@@ -200,17 +200,19 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 					Size:    len(bodyBytes),
 				}
 			}
-			log.Printf("[GoProxy] Binary response too small (%d bytes), might be error", len(bodyBytes))
+			log.Printf("[GoProxy] Binary too small (%d bytes), skipping", len(bodyBytes))
+			continue
 		}
 
 		text := string(bodyBytes)
+
 		if strings.Contains(text, "b64_json") {
 			var jsonResp struct {
 				Data []struct {
 					B64JSON string `json:"b64_json"`
 				} `json:"data"`
 			}
-			if json.Unmarshal(bodyBytes, &jsonResp) == nil && len(jsonResp.Data) > 0 && jsonResp.Data[0].B64JSON != "" {
+			if json.Unmarshal(bodyBytes, &jsonResp) == nil && len(jsonResp.Data) > 0 && len(jsonResp.Data[0].B64JSON) > 1000 {
 				log.Printf("[GoProxy] SUCCESS (json): b64 len=%d", len(jsonResp.Data[0].B64JSON))
 				return ImageResponse{Success: true, B64JSON: jsonResp.Data[0].B64JSON, Size: len(bodyBytes)}
 			}
@@ -218,13 +220,15 @@ func generateImage(apiURL, apiKey string, req ImageRequest) ImageResponse {
 
 		if strings.Contains(text, "event:") && strings.Contains(text, "data:") {
 			foundB64 := parseSSEText(text)
-			if foundB64 != "" {
+			if len(foundB64) > 1000 {
 				log.Printf("[GoProxy] SUCCESS (sse): b64 len=%d", len(foundB64))
 				return ImageResponse{Success: true, B64JSON: foundB64, Size: len(bodyBytes)}
 			}
+			log.Printf("[GoProxy] SSE found but b64 too small (%d bytes), retrying", len(foundB64))
+			continue
 		}
 
-		log.Printf("[GoProxy] No image found, body=%d bytes, ct=%s, preview: %s", len(bodyBytes), ct, text[:min(200, len(text))])
+		log.Printf("[GoProxy] No image found, body=%d bytes, ct=%s", len(bodyBytes), ct)
 	}
 
 	return ImageResponse{Error: "All attempts failed after 5 retries"}
