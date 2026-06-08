@@ -91,6 +91,8 @@ export default function ChatIdPage() {
         return;
       }
 
+      setConversationReady(false);
+
       const supabase = createClient();
       const {
         data: { user },
@@ -214,7 +216,7 @@ export default function ChatIdPage() {
     }
   }, [ensureConversation, generateImage, setMessages, refresh]);
 
-  const loading = chatLoading || imageLoading || pendingImageJob;
+  const loading = chatLoading || imageLoading || pendingImageJob || (!!conversationId && !conversationReady);
 
   return (
     <div className="flex h-screen bg-slate-50/50">

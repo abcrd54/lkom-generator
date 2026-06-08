@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { getChatImageUrl } from "@/lib/image-url";
 import { Download, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface ImageCardProps {
   url: string;
@@ -18,7 +18,15 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
   const [error, setError] = useState(false);
   const [open, setOpen] = useState(false);
   const [renderedAt] = useState(() => Date.now());
+  const [retryKey, setRetryKey] = useState(0);
   const resolvedUrl = getChatImageUrl(url);
+  const imageSrc = retryKey > 0 ? `${resolvedUrl}${resolvedUrl.includes("?") ? "&" : "?"}r=${retryKey}` : resolvedUrl;
+
+  useEffect(() => {
+    setLoading(true);
+    setError(false);
+    setRetryKey(0);
+  }, [resolvedUrl]);
 
   const daysLeft = expiresAt
     ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - renderedAt) / (1000 * 60 * 60 * 24)))
@@ -64,12 +72,16 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
             </div>
           ) : (
             <img
-              key={resolvedUrl}
-              src={resolvedUrl}
+              key={imageSrc}
+              src={imageSrc}
               alt={alt}
               className="block w-full max-h-48 object-cover"
               onLoad={() => setLoading(false)}
               onError={() => {
+                if (retryKey === 0) {
+                  setRetryKey(1);
+                  return;
+                }
                 setLoading(false);
                 setError(true);
               }}
@@ -79,8 +91,8 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
         <DialogContent className="max-w-5xl border-none bg-black/95 p-2 text-white shadow-2xl sm:max-w-[min(92vw,1200px)]" showCloseButton={true}>
           <div className="flex max-h-[88vh] items-center justify-center overflow-hidden rounded-lg">
             <img
-              key={`${resolvedUrl}-modal`}
-              src={resolvedUrl}
+              key={`${imageSrc}-modal`}
+              src={imageSrc}
               alt={alt}
               className="max-h-[88vh] w-auto max-w-full object-contain"
             />

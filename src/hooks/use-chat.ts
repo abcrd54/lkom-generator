@@ -29,33 +29,38 @@ export function useChat() {
   const supabase = createClient();
 
   const loadMessages = useCallback(async (conversationId: string) => {
-    const { data } = await supabase
-      .from("messages")
-      .select("*, images(r2_url, expires_at, storage_deleted_at)")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true });
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from("messages")
+        .select("*, images(r2_url, expires_at, storage_deleted_at)")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true });
 
-    if (data) {
-      const formatted: ChatMessage[] = (data as MessageRow[]).map((m) => {
-        const image = Array.isArray(m.images) ? m.images[0] : undefined;
-        const imageUrl = image?.r2_url || undefined;
-        const imageExpired = Boolean(
-          image && (!image.r2_url || image.storage_deleted_at || new Date(image.expires_at).getTime() <= Date.now())
-        );
+      if (data) {
+        const formatted: ChatMessage[] = (data as MessageRow[]).map((m) => {
+          const image = Array.isArray(m.images) ? m.images[0] : undefined;
+          const imageUrl = image?.r2_url || undefined;
+          const imageExpired = Boolean(
+            image && (!image.r2_url || image.storage_deleted_at || new Date(image.expires_at).getTime() <= Date.now())
+          );
 
-        return {
-          id: m.id,
-          role: m.role as "user" | "assistant",
-          content: m.content || "",
-          model: m.model || undefined,
-          imageUrl: imageUrl || m.image_url || undefined,
-          imageExpired,
-          imageExpiresAt: image?.expires_at,
-          referenceImages: Array.isArray(m.reference_images) ? m.reference_images : undefined,
-          createdAt: m.created_at,
-        };
-      });
-      setMessages(formatted);
+          return {
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content || "",
+            model: m.model || undefined,
+            imageUrl: imageUrl || m.image_url || undefined,
+            imageExpired,
+            imageExpiresAt: image?.expires_at,
+            referenceImages: Array.isArray(m.reference_images) ? m.reference_images : undefined,
+            createdAt: m.created_at,
+          };
+        });
+        setMessages(formatted);
+      }
+    } finally {
+      setLoading(false);
     }
   }, [supabase]);
 
