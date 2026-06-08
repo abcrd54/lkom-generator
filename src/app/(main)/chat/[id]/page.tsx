@@ -13,6 +13,7 @@ import { useConversations } from "@/hooks/use-conversations";
 import type { ImageGenerateRequest } from "@/types";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { getChatImageUrl } from "@/lib/image-url";
 
 function getLatestImageReference(messages: ReturnType<typeof useChat>["messages"]) {
   for (let index = messages.length - 1; index >= 0; index--) {
@@ -23,7 +24,7 @@ function getLatestImageReference(messages: ReturnType<typeof useChat>["messages"
       name: "Gambar terakhir",
       mimeType: "image/png",
       url: message.imageUrl,
-      previewUrl: message.imageUrl,
+      previewUrl: getChatImageUrl(message.imageUrl),
     };
   }
 

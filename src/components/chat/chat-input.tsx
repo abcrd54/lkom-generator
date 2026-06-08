@@ -288,12 +288,11 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
             {latestImageReference?.url && referenceImages.length === 0 && (
               <div className="flex flex-wrap items-center gap-2 rounded-md border border-blue-100 bg-blue-50/60 p-2">
                 <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-blue-100 bg-white">
-                  <Image
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
                     src={latestImageReference.previewUrl || latestImageReference.url}
                     alt={latestImageReference.name}
-                    fill
-                    unoptimized
-                    className="object-cover"
+                    className="h-full w-full object-cover"
                   />
                 </div>
                 <div className="min-w-0 flex-1">
