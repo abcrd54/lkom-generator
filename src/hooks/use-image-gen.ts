@@ -34,6 +34,45 @@ export function useImageGen() {
     }
   }, []);
 
+  const enqueueImage = useCallback(async (
+    options: ImageGenerateRequest,
+    conversationId: string
+  ): Promise<string | null> => {
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...options, conversationId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 429) {
+          toast.error(`Kuota gambar habis. Reset: ${new Date(data.resetAt).toLocaleString("id-ID")}`);
+        } else {
+          toast.error(data.error || "Gagal generate gambar");
+        }
+        return null;
+      }
+
+      if (!data.jobId) {
+        toast.error("Job gambar tidak valid");
+        return null;
+      }
+
+      toast.info("Gambar masuk antrean");
+      return data.jobId as string;
+    } catch {
+      toast.error("Gagal mengirim request gambar");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const generateImage = useCallback(async (
     options: ImageGenerateRequest,
     conversationId: string
@@ -101,7 +140,7 @@ export function useImageGen() {
       }
 
       if (!result) {
-        toast.error("Generate gambar terlalu lama. Cek percakapan beberapa saat lagi.");
+        toast.info("Gambar masih diproses. Hasil akan muncul otomatis di percakapan ini.");
         return null;
       }
 
@@ -129,5 +168,5 @@ export function useImageGen() {
     }
   }, [fetchQuota]);
 
-  return { loading, quota, generateImage, fetchQuota };
+  return { loading, quota, generateImage, enqueueImage, fetchQuota };
 }

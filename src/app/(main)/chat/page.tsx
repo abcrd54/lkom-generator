@@ -39,7 +39,7 @@ export default function ChatPage() {
   const router = useRouter();
 
   const { messages, loading: chatLoading, streamingContent, sendMessage, setMessages } = useChat();
-  const { loading: imageLoading, quota, generateImage, fetchQuota } = useImageGen();
+  const { loading: imageLoading, quota, enqueueImage, fetchQuota } = useImageGen();
   const { createConversation, refreshTrigger, refresh } = useConversations();
 
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
@@ -139,15 +139,27 @@ export default function ChatPage() {
       },
     ]);
 
-    const result = await generateImage(options, convId);
-    if (result) {
-      setMessages((prev) => [...prev, result]);
-      if (shouldNavigate) {
-        router.replace(`/chat/${convId}`);
-      }
+    const jobId = await enqueueImage(options, convId);
+    if (!jobId) return;
+
+    if (shouldNavigate) {
+      router.replace(`/chat/${convId}`);
       refresh();
+      return;
     }
-  }, [currentConversationId, ensureConversation, generateImage, setMessages, refresh, router]);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `pending-${Date.now()}`,
+        role: "assistant",
+        content: "",
+        createdAt: new Date().toISOString(),
+        model: "cx/gpt-5.5-image",
+      },
+    ]);
+    refresh();
+  }, [currentConversationId, ensureConversation, enqueueImage, setMessages, refresh, router]);
 
   const loading = chatLoading || imageLoading;
   const latestImageReference = getLatestImageReference(messages);

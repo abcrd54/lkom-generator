@@ -52,7 +52,7 @@ export default function ChatIdPage() {
     sendMessage,
     setMessages,
   } = useChat();
-  const { loading: imageLoading, quota, generateImage, fetchQuota } = useImageGen();
+  const { loading: imageLoading, quota, enqueueImage, fetchQuota } = useImageGen();
   const { createConversation, refreshTrigger, refresh } = useConversations();
 
   const currentConversationId = conversationId || null;
@@ -260,12 +260,12 @@ export default function ChatIdPage() {
       },
     ]);
 
-    const result = await generateImage(options, convId);
-    if (result) {
-      setMessages((prev) => [...prev, result]);
-      refresh();
-    }
-  }, [ensureConversation, generateImage, setMessages, refresh]);
+    const jobId = await enqueueImage(options, convId);
+    if (!jobId) return;
+
+    startPolling(jobId, convId);
+    refresh();
+  }, [ensureConversation, enqueueImage, setMessages, refresh, startPolling]);
 
   const actionLoading = chatLoading || imageLoading;
   const historyLoading = loadingMessages || (!!conversationId && !conversationReady);
