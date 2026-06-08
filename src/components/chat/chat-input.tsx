@@ -151,19 +151,24 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
     if (mode === "text") {
       onSendMessage(message.trim());
     } else {
-      const selectedReferences = referenceImages.length
-        ? referenceImages
-        : useLatestImageReference && latestImageReference
-          ? [latestImageReference]
-          : [];
+      const uploadedReferenceImages = referenceImages.length
+        ? referenceImages.map(({ name, mimeType, url, dataUrl }) => ({
+            name,
+            mimeType,
+            url,
+            dataUrl,
+          }))
+        : undefined;
+      const latestReferenceUrls =
+        !uploadedReferenceImages && useLatestImageReference && latestImageReference?.url
+          ? [latestImageReference.url]
+          : undefined;
 
       onGenerateImage({
         prompt: message.trim(),
         ...imageOptions,
-        referenceImageUrls: selectedReferences
-          .map((image) => image.url)
-          .filter((value): value is string => typeof value === "string" && value.length > 0),
-        referenceImages: selectedReferences.length ? selectedReferences : undefined,
+        referenceImageUrls: latestReferenceUrls,
+        referenceImages: uploadedReferenceImages,
       });
       referenceImages.forEach((image) => {
         if (image.previewUrl) {
