@@ -4,6 +4,50 @@ import { checkImageRateLimit } from "@/lib/rate-limit";
 import { getImageQueue } from "@/lib/image-jobs";
 import type { ImageStyle, AgeGroup, AspectRatio, DetailLevel, ImageLanguage, ReferenceImage } from "@/types";
 
+type MessageWithImages = {
+  images?: {
+    r2_url: string | null;
+    expires_at: string | null;
+    storage_deleted_at?: string | null;
+  }[] | null;
+};
+
+function isContinuationPrompt(prompt: string) {
+  const normalized = prompt.toLowerCase();
+  return [
+    /\b(lanjutkan|lanjutin|continue)\b/,
+    /\b(gambar|image|foto|ilustrasi)\s+(sebelumnya|tadi|itu|terakhir)\b/,
+    /\b(sebelumnya|tadi|itu|terakhir)\s+(ubah|ganti|revisi|edit|perbaiki)\b/,
+    /\b(ubah|ganti|revisi|edit|perbaiki)\b/,
+    /\b(versi|variasi)\s+(lain|baru|berikutnya|selanjutnya)\b/,
+    /\b(karakter|tokoh|style|gaya|komposisi)\s+(yang\s+)?sama\b/,
+    /\bpertahankan\b/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
+async function findLatestAssistantImageUrl(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  conversationId: string
+) {
+  const { data } = await supabase
+    .from("messages")
+    .select("images(r2_url, expires_at, storage_deleted_at)")
+    .eq("conversation_id", conversationId)
+    .eq("role", "assistant")
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  const rows = (data || []) as MessageWithImages[];
+  for (const row of rows) {
+    const image = Array.isArray(row.images) ? row.images[0] : undefined;
+    if (!image?.r2_url || image.storage_deleted_at) continue;
+    if (image.expires_at && new Date(image.expires_at).getTime() <= Date.now()) continue;
+    return image.r2_url;
+  }
+
+  return undefined;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -55,6 +99,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
 
+    const finalPrompt = prompt.trim();
+
     if (!conversationId) {
       return NextResponse.json({ error: "Conversation ID is required" }, { status: 400 });
     }
@@ -93,7 +139,17 @@ export async function POST(request: NextRequest) {
             .map((image) => image.url)
             .filter((value): value is string => typeof value === "string" && value.length > 0);
 
-    if (Math.max(normalizedReferenceImages.length, normalizedReferenceImageUrls.length) > 3) {
+    const continuationReferenceImageUrl =
+      normalizedReferenceImages.length === 0 &&
+      normalizedReferenceImageUrls.length === 0 &&
+      isContinuationPrompt(finalPrompt)
+        ? await findLatestAssistantImageUrl(supabase, conversationId)
+        : undefined;
+    const effectiveReferenceImageUrls = continuationReferenceImageUrl
+      ? [continuationReferenceImageUrl]
+      : normalizedReferenceImageUrls;
+
+    if (Math.max(normalizedReferenceImages.length, effectiveReferenceImageUrls.length) > 3) {
       return NextResponse.json({ error: "Maksimal 3 gambar referensi" }, { status: 400 });
     }
 
@@ -113,8 +169,6 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json({ error: "Ukuran gambar referensi terlalu besar" }, { status: 400 });
     }
-
-    const finalPrompt = prompt.trim();
 
     const queue = getImageQueue();
     const counts = await queue.getJobCounts("waiting", "delayed", "active", "paused");
@@ -141,9 +195,9 @@ export async function POST(request: NextRequest) {
       language,
       watermark,
       referenceImageUrl:
-        normalizedReferenceImageUrls.length === 1 ? normalizedReferenceImageUrls[0] : undefined,
+        effectiveReferenceImageUrls.length === 1 ? effectiveReferenceImageUrls[0] : undefined,
       referenceImageUrls:
-        normalizedReferenceImageUrls.length > 1 ? normalizedReferenceImageUrls : undefined,
+        effectiveReferenceImageUrls.length > 1 ? effectiveReferenceImageUrls : undefined,
       referenceImages: normalizedReferenceImages.length ? normalizedReferenceImages : undefined,
     });
 
