@@ -3,6 +3,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { getChatImageUrl } from "@/lib/image-url";
 import { Download, Loader2 } from "lucide-react";
 import { useState } from "react";
 
@@ -17,6 +18,7 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
   const [error, setError] = useState(false);
   const [open, setOpen] = useState(false);
   const [renderedAt] = useState(() => Date.now());
+  const resolvedUrl = getChatImageUrl(url);
 
   const daysLeft = expiresAt
     ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - renderedAt) / (1000 * 60 * 60 * 24)))
@@ -24,7 +26,7 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
 
   const handleDownload = async () => {
     try {
-      const response = await fetch(url);
+      const response = await fetch(resolvedUrl);
       const blob = await response.blob();
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -35,7 +37,7 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
       document.body.removeChild(a);
       URL.revokeObjectURL(downloadUrl);
     } catch {
-      window.open(url, "_blank");
+      window.open(resolvedUrl, "_blank");
     }
   };
 
@@ -62,8 +64,8 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
             </div>
           ) : (
             <img
-              key={url}
-              src={url}
+              key={resolvedUrl}
+              src={resolvedUrl}
               alt={alt}
               className="block w-full max-h-48 object-cover"
               onLoad={() => setLoading(false)}
@@ -77,8 +79,8 @@ export function ImageCard({ url, alt = "Generated image", expiresAt }: ImageCard
         <DialogContent className="max-w-5xl border-none bg-black/95 p-2 text-white shadow-2xl sm:max-w-[min(92vw,1200px)]" showCloseButton={true}>
           <div className="flex max-h-[88vh] items-center justify-center overflow-hidden rounded-lg">
             <img
-              key={`${url}-modal`}
-              src={url}
+              key={`${resolvedUrl}-modal`}
+              src={resolvedUrl}
               alt={alt}
               className="max-h-[88vh] w-auto max-w-full object-contain"
             />
