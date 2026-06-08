@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { GraduationCap, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -45,8 +46,15 @@ export default function LoginPage() {
   return (
     <Card className="border-blue-100 shadow-lg">
       <CardHeader className="text-center">
-        <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
-          <GraduationCap className="h-6 w-6 text-blue-600" />
+        <div className="mx-auto mb-3 flex h-20 w-48 items-center justify-center">
+          <Image
+            src="/lkom-logo.png"
+            alt="LKOM"
+            width={192}
+            height={96}
+            priority
+            className="h-auto w-full object-contain"
+          />
         </div>
         <CardTitle className="text-2xl text-blue-900">LKOM Generator</CardTitle>
         <CardDescription>Masuk ke platform LKOM Generator</CardDescription>

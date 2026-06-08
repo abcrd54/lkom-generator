@@ -14,6 +14,22 @@ import type { ImageGenerateRequest } from "@/types";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 
+function getLatestImageReference(messages: ReturnType<typeof useChat>["messages"]) {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role !== "assistant" || !message.imageUrl || message.imageExpired) continue;
+
+    return {
+      name: "Gambar terakhir",
+      mimeType: "image/png",
+      url: message.imageUrl,
+      previewUrl: message.imageUrl,
+    };
+  }
+
+  return null;
+}
+
 export default function ChatPage() {
   const router = useRouter();
 
@@ -116,6 +132,7 @@ export default function ChatPage() {
   }, [currentConversationId, ensureConversation, generateImage, setMessages, refresh, router]);
 
   const loading = chatLoading || imageLoading;
+  const latestImageReference = getLatestImageReference(messages);
 
   return (
     <div className="flex h-screen bg-slate-50/50">
@@ -166,6 +183,7 @@ export default function ChatPage() {
           onGenerateImage={handleGenerateImage}
           loading={loading}
           imageQuota={quota}
+          latestImageReference={latestImageReference}
         />
       </div>
     </div>

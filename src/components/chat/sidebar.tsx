@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,6 @@ import {
   Trash2,
   Edit3,
   LogOut,
-  GraduationCap,
   ChevronLeft,
   User,
   LayoutDashboard,
@@ -133,8 +133,15 @@ export function Sidebar({
     <div className="flex h-full w-72 flex-col border-r border-blue-100 bg-slate-50">
       {/* Header */}
       <div className="flex items-center gap-2 p-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-          <GraduationCap className="h-4 w-4 text-white" />
+        <div className="relative h-9 w-20 shrink-0">
+          <Image
+            src="/lkom-logo.png"
+            alt="LKOM"
+            fill
+            priority
+            sizes="80px"
+            className="object-contain"
+          />
         </div>
         <span className="font-semibold text-blue-900">LKOM Generator</span>
         {isAdmin && (

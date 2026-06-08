@@ -101,10 +101,11 @@ interface ChatInputProps {
   }) => void;
   loading: boolean;
   imageQuota: { remaining: number; limit?: number; resetAt: string } | null;
+  latestImageReference?: ReferenceImage | null;
   disabled?: boolean;
 }
 
-export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota, disabled }: ChatInputProps) {
+export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota, latestImageReference, disabled }: ChatInputProps) {
   const [mode, setMode] = useState<"text" | "image">("text");
   const [message, setMessage] = useState("");
   const imageOptions = {
@@ -117,9 +118,11 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
     watermark: "",
   };
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
+  const [useLatestImageReference, setUseLatestImageReference] = useState(false);
   const [uploadingReferences, setUploadingReferences] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
+  const referenceImagesRef = useRef<ReferenceImage[]>([]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -129,14 +132,18 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
   }, [message]);
 
   useEffect(() => {
+    referenceImagesRef.current = referenceImages;
+  }, [referenceImages]);
+
+  useEffect(() => {
     return () => {
-      referenceImages.forEach((image) => {
+      referenceImagesRef.current.forEach((image) => {
         if (image.previewUrl) {
           URL.revokeObjectURL(image.previewUrl);
         }
       });
     };
-  }, [referenceImages]);
+  }, []);
 
   const handleSubmit = () => {
     if (!message.trim() || loading || uploadingReferences) return;
@@ -144,15 +151,27 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
     if (mode === "text") {
       onSendMessage(message.trim());
     } else {
+      const selectedReferences = referenceImages.length
+        ? referenceImages
+        : useLatestImageReference && latestImageReference
+          ? [latestImageReference]
+          : [];
+
       onGenerateImage({
         prompt: message.trim(),
         ...imageOptions,
-        referenceImageUrls: referenceImages
+        referenceImageUrls: selectedReferences
           .map((image) => image.url)
           .filter((value): value is string => typeof value === "string" && value.length > 0),
-        referenceImages: referenceImages.length ? referenceImages : undefined,
+        referenceImages: selectedReferences.length ? selectedReferences : undefined,
+      });
+      referenceImages.forEach((image) => {
+        if (image.previewUrl) {
+          URL.revokeObjectURL(image.previewUrl);
+        }
       });
       setReferenceImages([]);
+      setUseLatestImageReference(false);
     }
     setMessage("");
   };
@@ -192,6 +211,7 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
 
     try {
       setUploadingReferences(true);
+      setUseLatestImageReference(false);
       const normalizedFiles = await Promise.all(filesToAdd.map(normalizeReferenceFile));
       const uploadedFiles = await uploadReferenceFiles(normalizedFiles.map((item) => item.file));
       const payloads = normalizedFiles.map((item, index) => ({
@@ -260,6 +280,52 @@ export function ChatInput({ onSendMessage, onGenerateImage, loading, imageQuota,
 
         {mode === "image" && (
           <div className="mb-3 space-y-2">
+            {latestImageReference?.url && referenceImages.length === 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-blue-100 bg-blue-50/60 p-2">
+                <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-blue-100 bg-white">
+                  <Image
+                    src={latestImageReference.previewUrl || latestImageReference.url}
+                    alt={latestImageReference.name}
+                    fill
+                    unoptimized
+                    className="object-cover"
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium text-slate-700">
+                    Gambar terakhir tersedia
+                  </div>
+                  <div className="truncate text-[11px] text-slate-400">
+                    Pilih edit dari gambar ini atau mulai gambar baru.
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setUseLatestImageReference(true)}
+                    className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                      useLatestImageReference
+                        ? "bg-blue-600 text-white"
+                        : "bg-white text-blue-700 hover:bg-blue-100"
+                    }`}
+                  >
+                    Edit gambar ini
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseLatestImageReference(false)}
+                    className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                      !useLatestImageReference
+                        ? "bg-slate-700 text-white"
+                        : "bg-white text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    Buat baru
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"

@@ -5,6 +5,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "LKOM Generator - AI Assistant",
   description: "Platform AI untuk chat dan generate gambar dengan mudah.",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
