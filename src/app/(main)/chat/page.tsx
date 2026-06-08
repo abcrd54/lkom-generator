@@ -30,6 +30,11 @@ function getLatestImageReference(messages: ReturnType<typeof useChat>["messages"
   return null;
 }
 
+function getConversationTitle(prompt: string) {
+  const trimmed = prompt.trim();
+  return trimmed.length > 50 ? `${trimmed.slice(0, 50)}...` : trimmed;
+}
+
 export default function ChatPage() {
   const router = useRouter();
 
@@ -103,12 +108,25 @@ export default function ChatPage() {
       : null;
 
     const supabase = createClient();
-    await supabase.from("messages").insert({
+    const { error: insertError } = await supabase.from("messages").insert({
       conversation_id: convId,
       role: "user",
       content: options.prompt.trim(),
       reference_images: persistedReferenceImages,
     });
+
+    if (insertError) {
+      toast.error("Gagal menyimpan prompt gambar");
+      return;
+    }
+
+    await supabase
+      .from("conversations")
+      .update({ title: getConversationTitle(options.prompt) })
+      .eq("id", convId)
+      .eq("title", "Chat Baru");
+
+    refresh();
 
     setMessages((prev) => [
       ...prev,
