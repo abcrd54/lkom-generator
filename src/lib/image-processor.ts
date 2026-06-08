@@ -176,6 +176,7 @@ async function doProcessImageJob(data: ImageJobData): Promise<ImageJobResult> {
       conversation_id: data.conversationId,
       role: "assistant",
       content: "",
+      image_url: imageUrl,
       model: usedModel,
     })
     .select("id, created_at")

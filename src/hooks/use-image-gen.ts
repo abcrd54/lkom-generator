@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { createClient } from "@/lib/supabase/client";
 import type { ImageGenerateRequest, ImageQuota, ChatMessage } from "@/types";
 import { toast } from "sonner";
 
@@ -15,7 +14,6 @@ function wait(ms: number) {
 export function useImageGen() {
   const [loading, setLoading] = useState(false);
   const [quota, setQuota] = useState<ImageQuota | null>(null);
-  const [supabase] = useState(() => createClient());
   const requestTokenRef = useRef(0);
 
   useEffect(() => {
@@ -107,28 +105,17 @@ export function useImageGen() {
         return null;
       }
 
-      const { data: savedMsg } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("id", result.messageId)
-        .eq("conversation_id", conversationId)
-        .single();
-
       // Update quota
       await fetchQuota();
 
-      if (savedMsg) {
-        return {
-          id: savedMsg.id,
-          role: "assistant",
-          content: "",
-          model: savedMsg.model || result.model || "cx/gpt-5.5-image",
-          imageUrl: savedMsg.image_url || result.imageUrl,
-          createdAt: savedMsg.created_at,
-        };
-      }
-
-      return null;
+      return {
+        id: result.messageId,
+        role: "assistant",
+        content: "",
+        model: result.model || "cx/gpt-5.5-image",
+        imageUrl: result.imageUrl,
+        createdAt: new Date().toISOString(),
+      };
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         return null;
@@ -140,7 +127,7 @@ export function useImageGen() {
         setLoading(false);
       }
     }
-  }, [supabase, fetchQuota]);
+  }, [fetchQuota]);
 
   return { loading, quota, generateImage, fetchQuota };
 }
