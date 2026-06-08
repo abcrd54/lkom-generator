@@ -24,6 +24,7 @@ type MessageRow = {
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const loadRequestRef = useRef(0);
@@ -31,11 +32,11 @@ export function useChat() {
 
   const loadMessages = useCallback(async (conversationId: string) => {
     const requestId = ++loadRequestRef.current;
-    setLoading(true);
+    setLoadingMessages(true);
     try {
       const { data } = await supabase
         .from("messages")
-        .select("*, images(r2_url, expires_at, storage_deleted_at)")
+        .select("id, role, content, model, image_url, reference_images, created_at, images(r2_url, expires_at, storage_deleted_at)")
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: true });
 
@@ -63,7 +64,7 @@ export function useChat() {
       }
     } finally {
       if (requestId === loadRequestRef.current) {
-        setLoading(false);
+        setLoadingMessages(false);
       }
     }
   }, [supabase]);
@@ -218,5 +219,5 @@ export function useChat() {
     setStreamingContent("");
   }, []);
 
-  return { messages, loading, streamingContent, loadMessages, sendMessage, stopStreaming, setMessages };
+  return { messages, loading, loadingMessages, streamingContent, loadMessages, sendMessage, stopStreaming, setMessages };
 }

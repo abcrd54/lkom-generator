@@ -22,7 +22,15 @@ export default function ChatIdPage() {
   const [pendingImageJob, setPendingImageJob] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { messages, loading: chatLoading, streamingContent, loadMessages, sendMessage, setMessages } = useChat();
+  const {
+    messages,
+    loading: chatLoading,
+    loadingMessages,
+    streamingContent,
+    loadMessages,
+    sendMessage,
+    setMessages,
+  } = useChat();
   const { loading: imageLoading, quota, generateImage, fetchQuota } = useImageGen();
   const { createConversation, refreshTrigger, refresh } = useConversations();
 
@@ -225,7 +233,9 @@ export default function ChatIdPage() {
     }
   }, [ensureConversation, generateImage, setMessages, refresh]);
 
-  const loading = chatLoading || imageLoading || pendingImageJob || (!!conversationId && !conversationReady);
+  const actionLoading = chatLoading || imageLoading;
+  const historyLoading = loadingMessages || (!!conversationId && !conversationReady);
+  const chatAreaLoading = actionLoading || pendingImageJob;
 
   return (
     <div className="flex h-screen bg-slate-50/50">
@@ -266,7 +276,8 @@ export default function ChatIdPage() {
 
         <ChatArea
           messages={messages}
-          loading={loading}
+          loading={chatAreaLoading}
+          loadingMessages={historyLoading}
           streamingContent={streamingContent}
           pendingText={pendingImageJob ? "Gambar sedang dibuat..." : imageLoading ? "Gambar masuk antrean" : "AI sedang menyusun jawaban"}
         />
@@ -274,8 +285,9 @@ export default function ChatIdPage() {
         <ChatInput
           onSendMessage={handleSendMessage}
           onGenerateImage={handleGenerateImage}
-          loading={loading}
+          loading={actionLoading}
           imageQuota={quota}
+          disabled={!conversationReady}
         />
       </div>
     </div>

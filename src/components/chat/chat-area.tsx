@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChatBubble } from "./chat-bubble";
-import { GraduationCap, FileText, Image as ImageIcon, BarChart3, GitBranch, Clock } from "lucide-react";
+import { GraduationCap, FileText, Image as ImageIcon, BarChart3, GitBranch, Clock, Loader2 } from "lucide-react";
 import type { ChatMessage } from "@/types";
 
 interface ChatAreaProps {
   messages: ChatMessage[];
   loading: boolean;
+  loadingMessages?: boolean;
   streamingContent: string;
   pendingText?: string;
 }
@@ -36,6 +37,7 @@ function ElapsedTimer() {
 export function ChatArea({
   messages,
   loading,
+  loadingMessages = false,
   streamingContent,
   pendingText = "AI sedang menyusun jawaban",
 }: ChatAreaProps) {
@@ -44,6 +46,14 @@ export function ChatArea({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
+
+  if (messages.length === 0 && loadingMessages) {
+    return (
+      <div className="flex flex-1 items-center justify-center py-6 text-slate-400">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    );
+  }
 
   if (messages.length === 0 && !loading) {
     return (
