@@ -53,12 +53,13 @@ export function Sidebar({
   const [editTitle, setEditTitle] = useState("");
   const router = useRouter();
   const pathname = usePathname();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const isAdmin = profile?.role === "admin";
   const isAdminPage = pathname.startsWith("/admin");
 
-  const fetchConversations = useCallback(async () => {
+  const fetchSidebarData = useCallback(async () => {
+    setLoading(true);
     try {
       const {
         data: { user },
@@ -66,63 +67,49 @@ export function Sidebar({
 
       if (!user) {
         setConversations([]);
+        setProfile(null);
         return;
       }
 
-      const query = supabase
-        .from("conversations")
-        .select("*")
-        .eq("user_id", user.id);
+      const [{ data: conversationsData, error: conversationsError }, { data: profileData }] = await Promise.all([
+        supabase
+          .from("conversations")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("last_message_at", { ascending: false }),
+        supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle(),
+      ]);
 
-      const { data, error } = await query
-        .order("last_message_at", { ascending: false });
-
-      if (!error && data) {
-        setConversations(data);
+      if (!conversationsError && conversationsData) {
+        setConversations(conversationsData);
       }
+
+      setProfile(profileData || null);
     } catch {
       // ignore
-    }
-    setLoading(false);
-  }, [supabase]);
-
-  const fetchProfile = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) {
-      // Upsert profile to ensure it exists
-      await supabase.from("profiles").upsert(
-        {
-          id: user.id,
-          email: user.email || "",
-          full_name: user.user_metadata?.full_name || "",
-        },
-        { onConflict: "id" },
-      );
-
-      const { data } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-      if (data) setProfile(data);
+    } finally {
+      setLoading(false);
     }
   }, [supabase]);
 
   useEffect(() => {
-    queueMicrotask(() => {
-      fetchConversations();
-      fetchProfile();
-    });
-  }, [fetchConversations, fetchProfile, refreshTrigger]);
+    const timer = window.setTimeout(() => {
+      void fetchSidebarData();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [fetchSidebarData, refreshTrigger]);
 
   const handleDelete = async (id: string) => {
     await supabase.from("conversations").delete().eq("id", id);
     if (currentConversationId === id) {
       onNewChat();
     }
-    fetchConversations();
+    fetchSidebarData();
   };
 
   const handleRename = async (id: string) => {
@@ -132,7 +119,7 @@ export function Sidebar({
         .update({ title: editTitle.trim() })
         .eq("id", id);
       setEditingId(null);
-      fetchConversations();
+      fetchSidebarData();
     }
   };
 

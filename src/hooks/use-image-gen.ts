@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ImageGenerateRequest, ImageQuota, ChatMessage } from "@/types";
 import { toast } from "sonner";
@@ -15,7 +15,14 @@ function wait(ms: number) {
 export function useImageGen() {
   const [loading, setLoading] = useState(false);
   const [quota, setQuota] = useState<ImageQuota | null>(null);
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
+  const requestTokenRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      requestTokenRef.current += 1;
+    };
+  }, []);
 
   const fetchQuota = useCallback(async () => {
     try {
@@ -33,13 +40,16 @@ export function useImageGen() {
     options: ImageGenerateRequest,
     conversationId: string
   ): Promise<ChatMessage | null> => {
+    const requestToken = ++requestTokenRef.current;
     setLoading(true);
+    const controller = new AbortController();
 
     try {
       const res = await fetch("/api/images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...options, conversationId }),
+        signal: controller.signal,
       });
 
       const data = await res.json();
@@ -64,9 +74,16 @@ export function useImageGen() {
       let result: { messageId: string; imageUrl: string; model?: string } | null = null;
 
       while (Date.now() - startedAt < IMAGE_JOB_TIMEOUT) {
+        if (requestToken !== requestTokenRef.current) {
+          controller.abort();
+          return null;
+        }
+
         await wait(IMAGE_JOB_POLL_INTERVAL);
 
-        const statusRes = await fetch(`/api/images/status/${data.jobId}`);
+        const statusRes = await fetch(`/api/images/status/${data.jobId}`, {
+          signal: controller.signal,
+        });
         const statusData = await statusRes.json();
 
         if (!statusRes.ok) {
@@ -112,11 +129,16 @@ export function useImageGen() {
       }
 
       return null;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return null;
+      }
       toast.error("Gagal generate gambar");
       return null;
     } finally {
-      setLoading(false);
+      if (requestToken === requestTokenRef.current) {
+        setLoading(false);
+      }
     }
   }, [supabase, fetchQuota]);
 

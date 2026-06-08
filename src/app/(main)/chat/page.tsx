@@ -17,7 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 export default function ChatPage() {
   const router = useRouter();
 
-  const { messages, loading: chatLoading, streamingContent, loadMessages, sendMessage, setMessages } = useChat();
+  const { messages, loading: chatLoading, streamingContent, sendMessage, setMessages } = useChat();
   const { loading: imageLoading, quota, generateImage, fetchQuota } = useImageGen();
   const { createConversation, refreshTrigger, refresh } = useConversations();
 
@@ -25,39 +25,18 @@ export default function ChatPage() {
 
   useEffect(() => {
     fetchQuota();
+  }, [fetchQuota]);
 
-    // Check for latest conversation
-    const fetchLatest = async () => {
+  useEffect(() => {
+    const ensureUser = async () => {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.replace("/login");
-        return;
-      }
-
-      // Ensure profile exists
-      await supabase.from("profiles").upsert({
-        id: user.id,
-        email: user.email || "",
-        full_name: user.user_metadata?.full_name || "",
-      }, { onConflict: "id" });
-
-      // Fetch latest conversation
-      const { data } = await supabase
-        .from("conversations")
-        .select("id")
-        .eq("user_id", user.id)
-        .order("last_message_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (data) {
-        setCurrentConversationId(data.id);
-        loadMessages(data.id);
       }
     };
-    fetchLatest();
-  }, [fetchQuota, loadMessages, router]);
+    ensureUser();
+  }, [router]);
 
   const handleNewChat = useCallback(async () => {
     setCurrentConversationId(null);
@@ -67,9 +46,9 @@ export default function ChatPage() {
 
   const handleSelectConversation = useCallback((id: string) => {
     setCurrentConversationId(id);
-    loadMessages(id);
+    setMessages([]);
     router.push(`/chat/${id}`);
-  }, [router, loadMessages]);
+  }, [router, setMessages]);
 
   const ensureConversation = useCallback(async (): Promise<string | null> => {
     if (currentConversationId) return currentConversationId;

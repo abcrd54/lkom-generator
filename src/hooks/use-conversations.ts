@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 export function useConversations() {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
   const router = useRouter();
 
   const refresh = useCallback(() => {

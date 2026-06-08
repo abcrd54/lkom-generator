@@ -14,6 +14,42 @@ interface ChatBubbleProps {
   pendingText?: string;
 }
 
+function renderInline(text: string) {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let partIndex = 0;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    if (token.startsWith("**") && token.endsWith("**")) {
+      nodes.push(<strong key={`strong-${partIndex++}`}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith("`") && token.endsWith("`")) {
+      nodes.push(
+        <code
+          key={`code-${partIndex++}`}
+          className="bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded text-xs font-mono"
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
 export function ChatBubble({
   message,
   isStreaming,
@@ -39,14 +75,11 @@ export function ChatBubble({
       if (line.startsWith("## ")) return <h2 key={i} className="text-base font-semibold mt-3 mb-1">{line.slice(3)}</h2>;
       if (line.startsWith("# ")) return <h1 key={i} className="text-lg font-bold mt-3 mb-1">{line.slice(2)}</h1>;
 
-      const boldProcessed = line.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-      const codeProcessed = boldProcessed.replace(/`(.*?)`/g, '<code class="bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded text-xs font-mono">$1</code>');
-
       if (line.match(/^[-*]\s/)) {
         return (
           <div key={i} className="flex gap-2 ml-2">
-            <span className="text-blue-500 mt-0.5">•</span>
-            <span dangerouslySetInnerHTML={{ __html: codeProcessed.slice(2) }} />
+            <span className="text-blue-500 mt-0.5">-</span>
+            <span>{renderInline(line.slice(2))}</span>
           </div>
         );
       }
@@ -56,20 +89,19 @@ export function ChatBubble({
         return (
           <div key={i} className="flex gap-2 ml-2">
             <span className="text-blue-500 font-medium text-xs mt-0.5">{num}.</span>
-            <span dangerouslySetInnerHTML={{ __html: codeProcessed.replace(/^\d+\.\s/, "") }} />
+            <span>{renderInline(line.replace(/^\d+\.\s/, ""))}</span>
           </div>
         );
       }
 
       if (line.trim() === "") return <div key={i} className="h-2" />;
 
-      return <p key={i} className="leading-relaxed" dangerouslySetInnerHTML={{ __html: codeProcessed }} />;
+      return <p key={i} className="leading-relaxed">{renderInline(line)}</p>;
     });
   };
 
   return (
     <div className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
-      {/* AI Avatar - left side */}
       {!isUser && (
         <Avatar className="h-8 w-8 shrink-0 mt-1">
           <AvatarFallback className="bg-blue-100 text-blue-700">
@@ -78,7 +110,6 @@ export function ChatBubble({
         </Avatar>
       )}
 
-      {/* Bubble */}
       <div className={`flex flex-col gap-1 ${isUser ? "items-end" : "items-start"} max-w-[85%]`}>
         <div
           className={`group relative text-sm ${
@@ -147,7 +178,6 @@ export function ChatBubble({
             </div>
           )}
 
-          {/* Streaming indicator */}
           {isStreaming && (
             <span className="inline-flex gap-1 ml-1 mt-2">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: "0ms" }} />
@@ -156,7 +186,6 @@ export function ChatBubble({
             </span>
           )}
 
-          {/* Copy button */}
           {!isUser && message.content && !isStreaming && (
             <button
               onClick={handleCopy}
@@ -168,7 +197,6 @@ export function ChatBubble({
         </div>
       </div>
 
-      {/* User Avatar - right side */}
       {isUser && (
         <Avatar className="h-8 w-8 shrink-0 mt-1">
           <AvatarFallback className="bg-blue-600 text-white">

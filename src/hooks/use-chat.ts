@@ -26,9 +26,11 @@ export function useChat() {
   const [loading, setLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const abortRef = useRef<AbortController | null>(null);
-  const supabase = createClient();
+  const loadRequestRef = useRef(0);
+  const [supabase] = useState(() => createClient());
 
   const loadMessages = useCallback(async (conversationId: string) => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     try {
       const { data } = await supabase
@@ -37,7 +39,7 @@ export function useChat() {
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: true });
 
-      if (data) {
+      if (data && requestId === loadRequestRef.current) {
         const formatted: ChatMessage[] = (data as MessageRow[]).map((m) => {
           const image = Array.isArray(m.images) ? m.images[0] : undefined;
           const imageUrl = image?.r2_url || undefined;
@@ -60,7 +62,9 @@ export function useChat() {
         setMessages(formatted);
       }
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) {
+        setLoading(false);
+      }
     }
   }, [supabase]);
 

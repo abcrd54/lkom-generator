@@ -150,14 +150,23 @@ export default function ChatIdPage() {
   }, [conversationId, conversationReady, pendingImageJob, loadMessages]);
 
   const handleNewChat = useCallback(async () => {
+    stopPolling();
+    setPendingImageJob(false);
+    setConversationReady(false);
     setMessages([]);
     router.push("/chat");
-  }, [router, setMessages]);
+  }, [router, setMessages, stopPolling]);
 
   const handleSelectConversation = useCallback((id: string) => {
-    loadMessages(id);
+    if (id === conversationId) {
+      return;
+    }
+    stopPolling();
+    setPendingImageJob(false);
+    setConversationReady(false);
+    setMessages([]);
     router.push(`/chat/${id}`);
-  }, [router, loadMessages]);
+  }, [conversationId, router, setMessages, stopPolling]);
 
   const ensureConversation = useCallback(async (): Promise<string | null> => {
     if (currentConversationId && conversationReady) return currentConversationId;
